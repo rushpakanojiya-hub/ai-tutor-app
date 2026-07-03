@@ -1,0 +1,76 @@
+# Brings up PostgreSQL and the Go backend together for local development.
+# Usage: docker compose up --build
+#
+# The Flutter app still talks to the backend the same way as before —
+# only the *host* changes (localhost:8080 either way; see README for the
+# Android emulator / physical device notes).
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-tutor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
+      POSTGRES_DB: ${DB_NAME:-ai_tutor_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-tutor-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      GIN_MODE: release
+      APP_ENV: docker
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-root}@postgres:5432/${DB_NAME:-ai_tutor_db}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-insecure_dev_secret_change_me}
+      JWT_ACCESS_EXPIRY_MINUTES: ${JWT_ACCESS_EXPIRY_MINUTES:-60}
+      JWT_REFRESH_EXPIRY_DAYS: ${JWT_REFRESH_EXPIRY_DAYS:-7}
+    ports:
+      - "8080:8080"
+    networks:
+      - backend-network
+
+  # Optional helper: run migrations against the Dockerized Postgres without
+  # installing golang-migrate locally. Doesn't start automatically —
+  # only runs when explicitly invoked (see README / Makefile "make migrate").
+  migrate:
+    image: migrate/migrate:v4.17.1
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    networks:
+      - backend-network
+    entrypoint:
+      - migrate
+      - -path=/migrations
+      - -database=postgres://${DB_USER:-postgres}:${DB_PASSWORD:-root}@postgres:5432/${DB_NAME:-ai_tutor_db}?sslmode=disable
+      - up
+
+volumes:
+  postgres-data:
+
+networks:
+  backend-network:
+    driver: bridge
