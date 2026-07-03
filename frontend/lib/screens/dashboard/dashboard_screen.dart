@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../categories/categories_screen.dart';
 import '../profile/profile_screen.dart';
 
-/// Student dashboard shell. Part 7 of the spec: UI only, no real data yet —
-/// tapping "My Courses" / "AI Tutor" / "Quiz" / "Progress" does nothing
-/// beyond a placeholder message until later days.
+/// Student dashboard shell. "My Courses" (card + bottom nav tab) leads into
+/// the Day 2 Categories -> Subjects -> Lessons flow. AI Tutor/Quiz/Progress
+/// remain placeholders â€” explicitly out of scope for Day 2.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -19,7 +21,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final _pages = const [
     _DashboardHome(),
-    _PlaceholderTab(title: 'Courses'),
+    CategoriesScreen(),
     _PlaceholderTab(title: 'AI Tutor'),
     ProfileScreen(),
   ];
@@ -53,7 +55,7 @@ class _DashboardHome extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       children: [
         Text(
-          'Welcome, ${user?.name ?? 'Student'} 👋',
+          'Welcome, ${user?.name ?? 'Student'} ðŸ‘‹',
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
@@ -71,7 +73,7 @@ class _DashboardHome extends StatelessWidget {
               icon: Icons.menu_book_rounded,
               label: 'My Courses',
               color: AppColors.primary,
-              onTap: () => _showComingSoon(context, 'My Courses'),
+              onTap: () => context.push('/categories'),
             ),
             _DashboardCard(
               icon: Icons.smart_toy_rounded,
@@ -154,7 +156,7 @@ class _PlaceholderTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text('$title — coming soon', style: const TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+      child: Text('$title â€” coming soon', style: const TextStyle(color: AppColors.textSecondary, fontSize: 16)),
     );
   }
 }

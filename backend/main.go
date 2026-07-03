@@ -1,7 +1,6 @@
-// AI Tutor Backend — Day 1 (finalized)
-// Boots the Gin server, connects to PostgreSQL, and wires up the
-// auth and users modules using Clean Architecture
-// (handler -> service -> repository -> model).
+// AI Tutor Backend — Day 2 (Course & Learning Management added)
+// Boots the Gin server, connects to PostgreSQL, and wires up all modules
+// using Clean Architecture (handler -> service -> repository -> model).
 package main
 
 import (
@@ -12,7 +11,12 @@ import (
 	"ai-tutor-backend/configs"
 	"ai-tutor-backend/database"
 	"ai-tutor-backend/internal/auth"
+	"ai-tutor-backend/internal/categories"
+	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
+	"ai-tutor-backend/internal/notes"
+	"ai-tutor-backend/internal/search"
+	"ai-tutor-backend/internal/subjects"
 	"ai-tutor-backend/internal/users"
 	"ai-tutor-backend/pkg/logger"
 )
@@ -29,7 +33,7 @@ func main() {
 
 	authMiddleware := middleware.AuthMiddleware(cfg.JWTSecret)
 
-	// --- Dependency wiring: repository -> service -> handler ---
+	// --- Day 1: auth + users (unchanged) ---
 	authRepo := auth.NewRepository(db)
 	authService := auth.NewService(authRepo, cfg)
 	authHandler := auth.NewHandler(authService)
@@ -38,15 +42,32 @@ func main() {
 	usersService := users.NewService(usersRepo)
 	usersHandler := users.NewHandler(usersService)
 
-	// --- Health checks ---
-	// Kept at GET /health for backward compatibility with Day 1 manual testing.
+	// --- Day 2: course & learning management ---
+	categoriesRepo := categories.NewRepository(db)
+	categoriesService := categories.NewService(categoriesRepo)
+	categoriesHandler := categories.NewHandler(categoriesService)
+
+	subjectsRepo := subjects.NewRepository(db)
+	subjectsService := subjects.NewService(subjectsRepo)
+	subjectsHandler := subjects.NewHandler(subjectsService)
+
+	lessonsRepo := lessons.NewRepository(db)
+	lessonsService := lessons.NewService(lessonsRepo)
+	lessonsHandler := lessons.NewHandler(lessonsService)
+
+	notesRepo := notes.NewRepository(db)
+	notesService := notes.NewService(notesRepo)
+	notesHandler := notes.NewHandler(notesService)
+
+	// search reuses the categories/subjects/lessons repositories directly —
+	// no separate "search" table exists, it's a fan-out query.
+	searchService := search.NewService(categoriesRepo, subjectsRepo, lessonsRepo)
+	searchHandler := search.NewHandler(searchService)
+
+	// --- Health checks (unchanged) ---
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
-
-	// New, richer health check under /api, as expected by ops/uptime tooling
-	// and Docker Compose's healthcheck. Actually pings the DB so "database":
-	// "connected" is a real check, not a hardcoded string.
 	router.GET("/api/health", func(c *gin.Context) {
 		dbStatus := "connected"
 		if err := db.Ping(); err != nil {
@@ -64,11 +85,16 @@ func main() {
 	authHandler.RegisterRoutes(api, authMiddleware)
 	usersHandler.RegisterRoutes(api, authMiddleware)
 
-	// Role-gated routes are intentionally not added yet (Day 1 only has the
-	// student role). When Teacher/Admin routes exist, protect them like:
-	//
-	//   teacherGroup := api.Group("/teacher")
-	//   teacherGroup.Use(authMiddleware, middleware.RequireTeacher())
+	categories.RegisterRoutes(api, categoriesHandler, authMiddleware)
+	subjects.RegisterRoutes(api, subjectsHandler, authMiddleware)
+	lessons.RegisterRoutes(api, lessonsHandler, authMiddleware)
+	notes.RegisterRoutes(api, notesHandler, authMiddleware)
+	search.RegisterRoutes(api, searchHandler, authMiddleware)
+
+	// Role-gated routes are still intentionally absent (see Day 1 notes) —
+	// when an admin dashboard exists, the POST endpoints above (create
+	// category/subject/lesson/note) should switch to
+	// middleware.RequireAdmin() instead of the plain authMiddleware.
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	logger.Info(fmt.Sprintf("Server starting on %s (env: %s)", addr, cfg.AppEnv))

@@ -3,6 +3,10 @@ import 'package:provider/provider.dart';
 import 'core/routes/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/category_provider.dart';
+import 'providers/lesson_provider.dart';
+import 'providers/search_provider.dart';
+import 'providers/subject_provider.dart';
 
 void main() {
   runApp(const AiTutorApp());
@@ -13,8 +17,15 @@ class AiTutorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AuthProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        // Day 2: Course & Learning Management providers.
+        ChangeNotifierProvider(create: (_) => CategoryProvider()),
+        ChangeNotifierProvider(create: (_) => SubjectProvider()),
+        ChangeNotifierProvider(create: (_) => LessonProvider()),
+        ChangeNotifierProvider(create: (_) => SearchProvider()),
+      ],
       child: Consumer<AuthProvider>(
         builder: (context, authProvider, _) {
           final router = AppRouter(authProvider).router;
