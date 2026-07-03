@@ -27,4 +27,5 @@ frontend/**/*.iml
 .idea/
 .vscode/
 .DS_Store
-Thumbs.dbfrontend/android/build/
+Thumbs.db
+frontend/android/build/
