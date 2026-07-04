@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/constants/app_constants.dart';
 import '../../providers/lesson_provider.dart';
+import '../../services/storage_service.dart';
 import '../../widgets/lesson_card.dart';
 import '../../widgets/skeleton_box.dart';
 
 /// Feature 3: ordered list of lessons within a subject, each showing a
-/// completion checkmark (âœ“ / â¬œ, see LessonModel.isCompleted).
+/// completion checkmark backed by real, persisted progress
+/// (see LessonProvider.loadLessons).
 class LessonsScreen extends StatefulWidget {
   final int subjectId;
   final String subjectName;
@@ -19,11 +23,19 @@ class LessonsScreen extends StatefulWidget {
 }
 
 class _LessonsScreenState extends State<LessonsScreen> {
+  final StorageService _storage = StorageService();
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LessonProvider>().loadLessons(widget.subjectId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await context.read<LessonProvider>().loadLessons(widget.subjectId);
+      // Remembers the most recently opened subject locally, so the
+      // Dashboard's "Continue Learning" section can show real progress
+      // for it (see dashboard_screen.dart). No backend schema change â€”
+      // just SharedPreferences via the existing StorageService.
+      await _storage.setInt(AppConstants.keyLastSubjectId, widget.subjectId);
+      await _storage.setString(AppConstants.keyLastSubjectName, widget.subjectName);
     });
   }
 
@@ -48,7 +60,7 @@ class _LessonsScreenState extends State<LessonsScreen> {
       return ListView.separated(
         itemCount: 5,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (_, __) => const SkeletonBox(height: 64),
+        itemBuilder: (_, __) => SkeletonBox(height: 64, borderRadius: BorderRadius.circular(18)),
       );
     }
 
@@ -80,15 +92,53 @@ class _LessonsScreenState extends State<LessonsScreen> {
       );
     }
 
-    return ListView.builder(
-      itemCount: provider.lessons.length,
-      itemBuilder: (context, index) {
-        final lesson = provider.lessons[index];
-        return LessonCard(
-          lesson: lesson,
-          onTap: () => context.push('/lesson-player', extra: {'lessonId': lesson.id}),
-        );
-      },
+    final progress = provider.subjectProgress;
+
+    return ListView(
+      children: [
+        if (progress != null && progress.totalLessons > 0) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: AppTheme.softShadow,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Your progress', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text(
+                      '${progress.completedLessons} of ${progress.totalLessons} complete',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progress.percentage,
+                    minHeight: 8,
+                    backgroundColor: AppColors.purpleLight,
+                    valueColor: const AlwaysStoppedAnimation(AppColors.purple),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        ...provider.lessons.map(
+          (lesson) => LessonCard(
+            lesson: lesson,
+            onTap: () => context.push('/lesson-player', extra: {'lessonId': lesson.id}),
+          ),
+        ),
+      ],
     );
   }
 }

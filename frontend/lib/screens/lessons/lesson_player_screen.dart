@@ -3,14 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
 import '../../models/lesson_model.dart';
 import '../../providers/lesson_provider.dart';
 import '../../services/lesson_service.dart';
 import '../../widgets/notes_widget.dart';
+import '../../widgets/skeleton_box.dart';
 
-/// Feature 4 + 5: full lesson player â€” video, description, Previous/Next
-/// navigation, and the PDF notes section for the same lesson.
+/// Full lesson player: optional video, AI-generated explanation/key
+/// points/examples/practice questions/summary, a Quiz button, PDF notes,
+/// Previous/Next navigation, and Mark Complete.
+///
+/// If a lesson has no video, this screen shows the lesson's educational
+/// thumbnail with "Educational content available â€” read notes below"
+/// instead of an error, per the "no placeholder video" content strategy.
 class LessonPlayerScreen extends StatefulWidget {
   final int lessonId;
 
@@ -49,12 +57,12 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
       setState(() => _lesson = lesson);
 
       if (lesson.videoUrl.isNotEmpty) {
-        await _initVideo(lesson.videoUrl);
+        await _initVideo(ApiConstants.resolveMediaUrl(lesson.videoUrl));
       }
 
       if (mounted) {
         await context.read<LessonProvider>().loadNotes(lessonId);
-        context.read<LessonProvider>().markCompleted(lessonId);
+        await context.read<LessonProvider>().loadAiContent(lessonId);
       }
     } catch (e) {
       setState(() => _errorMessage = 'Could not load this lesson. Please try again.');
@@ -79,8 +87,6 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
       _videoController = controller;
       if (mounted) setState(() {});
     } catch (e) {
-      // Video failed to load (bad URL, network issue) â€” the rest of the
-      // screen (description, notes, navigation) still works without it.
       _videoController = null;
       _chewieController = null;
     }
@@ -111,9 +117,10 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
     final next = _lesson != null ? lessonProvider.nextOf(_lesson!.id) : null;
 
     return Scaffold(
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(title: Text(_lesson?.title ?? 'Lesson')),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.purple))
           : _errorMessage != null
               ? Center(
                   child: Column(
@@ -128,55 +135,42 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
                   ),
                 )
               : SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildVideoArea(),
                       Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(16),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: _buildMediaArea(),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_lesson!.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                const Icon(Icons.timer_outlined, size: 16, color: AppColors.textSecondary),
-                                const SizedBox(width: 6),
-                                Text('${_lesson!.duration} minutes', style: const TextStyle(color: AppColors.textSecondary)),
-                              ],
-                            ),
+                            _buildLessonHeaderCard(),
                             const SizedBox(height: 16),
-                            if (_lesson!.description.isNotEmpty) ...[
-                              const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                              const SizedBox(height: 6),
-                              Text(_lesson!.description, style: const TextStyle(color: AppColors.textSecondary)),
-                              const SizedBox(height: 20),
-                            ],
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: previous != null ? () => _goToLesson(previous) : null,
-                                    icon: const Icon(Icons.skip_previous_rounded),
-                                    label: const Text('Previous'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed: next != null ? () => _goToLesson(next) : null,
-                                    icon: const Icon(Icons.skip_next_rounded),
-                                    label: const Text('Next'),
-                                  ),
-                                ),
-                              ],
-                            ),
+                            _buildNavigationRow(previous, next),
+                            const SizedBox(height: 12),
+                            _buildMarkCompleteButton(),
                             const SizedBox(height: 24),
-                            NotesWidget(
-                              notes: lessonProvider.notes,
-                              isLoading: lessonProvider.isLoadingNotes,
-                              errorMessage: lessonProvider.notesErrorMessage,
+                            _buildAiContentSection(lessonProvider),
+                            const SizedBox(height: 24),
+                            Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: AppColors.card,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: AppTheme.softShadow,
+                              ),
+                              child: NotesWidget(
+                                notes: lessonProvider.notes,
+                                isLoading: lessonProvider.isLoadingNotes,
+                                errorMessage: lessonProvider.notesErrorMessage,
+                              ),
                             ),
                           ],
                         ),
@@ -187,14 +181,263 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
     );
   }
 
-  Widget _buildVideoArea() {
+  Widget _buildLessonHeaderCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppTheme.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_lesson!.title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: AppColors.purpleLight, borderRadius: BorderRadius.circular(20)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.access_time_rounded, size: 14, color: AppColors.purple),
+                const SizedBox(width: 6),
+                Text('${_lesson!.duration} minutes', style: const TextStyle(color: AppColors.purple, fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          if (_lesson!.description.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 6),
+            Text(_lesson!.description, style: const TextStyle(color: AppColors.textSecondary, height: 1.5)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavigationRow(LessonModel? previous, LessonModel? next) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: previous != null ? () => _goToLesson(previous) : null,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            icon: const Icon(Icons.skip_previous_rounded),
+            label: const Text('Previous'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: next != null ? () => _goToLesson(next) : null,
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            icon: const Icon(Icons.skip_next_rounded),
+            label: const Text('Next'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMarkCompleteButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () async {
+          await context.read<LessonProvider>().markCompleted(_lesson!.id);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Lesson marked as complete')),
+            );
+          }
+        },
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(50),
+          foregroundColor: AppColors.green,
+          side: const BorderSide(color: AppColors.green),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        icon: const Icon(Icons.check_circle_outline_rounded),
+        label: const Text('Mark Complete'),
+      ),
+    );
+  }
+
+  Widget _buildAiContentSection(LessonProvider provider) {
+    if (provider.isLoadingAiContent) {
+      return Column(
+        children: [
+          SkeletonBox(height: 24, width: 160, borderRadius: BorderRadius.circular(8)),
+          const SizedBox(height: 12),
+          SkeletonBox(height: 100, borderRadius: BorderRadius.circular(16)),
+        ],
+      );
+    }
+
+    if (provider.aiContentUnavailable) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: AppTheme.softShadow,
+        ),
+        child: const Text(
+          'AI-generated notes for this lesson are not available yet. Check the PDF notes below.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    if (provider.aiContentErrorMessage != null) {
+      return Text(provider.aiContentErrorMessage!, style: const TextStyle(color: AppColors.error));
+    }
+
+    final content = provider.aiContent;
+    if (content == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _aiCard('Explanation', Icons.lightbulb_outline_rounded, Text(content.explanation, style: const TextStyle(height: 1.5))),
+        const SizedBox(height: 14),
+        if (content.keyPoints.isNotEmpty)
+          _aiCard(
+            'Key Points',
+            Icons.checklist_rounded,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: content.keyPoints.map((p) => _bullet(p)).toList(),
+            ),
+          ),
+        const SizedBox(height: 14),
+        if (content.examples.isNotEmpty)
+          _aiCard(
+            'Examples',
+            Icons.school_outlined,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: content.examples.map((p) => _bullet(p)).toList(),
+            ),
+          ),
+        const SizedBox(height: 14),
+        if (content.practiceQuestions.isNotEmpty)
+          _aiCard(
+            'Practice Questions',
+            Icons.edit_note_rounded,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: content.practiceQuestions.map((p) => _bullet(p)).toList(),
+            ),
+          ),
+        const SizedBox(height: 14),
+        _aiCard('Summary', Icons.summarize_outlined, Text(content.summary, style: const TextStyle(height: 1.5))),
+        if (content.quiz.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => context.push('/quiz', extra: {'lessonId': _lesson!.id, 'questions': content.quiz}),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                backgroundColor: AppColors.orange,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              icon: const Icon(Icons.quiz_rounded),
+              label: const Text('Take Quiz'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _aiCard(String title, IconData icon, Widget child) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: AppTheme.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.purple),
+              const SizedBox(width: 8),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _bullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Icon(Icons.circle, size: 6, color: AppColors.textSecondary),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: const TextStyle(height: 1.4))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaArea() {
     if (_lesson == null || _lesson!.videoUrl.isEmpty) {
+      // No placeholder/cartoon video â€” show the lesson's educational
+      // thumbnail (if any) with a message pointing to the notes below.
+      final thumb = _lesson?.thumbnailUrl ?? '';
       return Container(
         height: 220,
         color: Colors.black12,
-        child: const Center(
-          child: Text('No video available for this lesson.', style: TextStyle(color: AppColors.textSecondary)),
-        ),
+        child: thumb.isNotEmpty
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    ApiConstants.resolveMediaUrl(thumb),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                  ),
+                  Container(
+                    color: Colors.black.withOpacity(0.35),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'Educational content available\nRead notes below',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              )
+            : const Center(
+                child: Text(
+                  'Educational content available\nRead notes below',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
       );
     }
 

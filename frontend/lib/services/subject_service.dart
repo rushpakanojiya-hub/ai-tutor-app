@@ -6,6 +6,12 @@ import 'api_service.dart';
 class SubjectService {
   final ApiService _api = ApiService();
 
+  Future<List<SubjectModel>> fetchAllSubjects() async {
+    final response = await _api.get(ApiConstants.subjects);
+    final data = response['data'] as List<dynamic>? ?? [];
+    return data.map((json) => SubjectModel.fromJson(json as Map<String, dynamic>)).toList();
+  }
+
   Future<List<SubjectModel>> fetchSubjectsByCategory(int categoryId) async {
     final response = await _api.get(ApiConstants.categorySubjects(categoryId));
     final data = response['data'] as List<dynamic>? ?? [];

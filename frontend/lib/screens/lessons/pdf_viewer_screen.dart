@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/snackbar_utils.dart';
 import '../../widgets/custom_button.dart';
 
-/// Feature 5: PDF notes screen. Opens the PDF in the device's default
-/// browser/PDF app instead of rendering it natively in-app — this avoids
-/// pulling in a native PDF-render plugin (e.g. syncfusion_flutter_pdfviewer),
-/// which conflicts with newer Android Gradle Plugin versions (jcenter()
-/// removal) on freshly created Flutter projects. url_launcher has no such
-/// native Gradle footprint, so it "just works" regardless of AGP version.
+/// AI-generated notes screen for a lesson's PDF: opens in the device's
+/// browser/PDF app, with Download (same action) and Share (copies the
+/// link) actions.
 class PdfViewerScreen extends StatelessWidget {
   final String url;
   final String title;
@@ -17,14 +15,24 @@ class PdfViewerScreen extends StatelessWidget {
   const PdfViewerScreen({super.key, required this.url, required this.title});
 
   Future<void> _open(BuildContext context) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null || !await canLaunchUrl(uri)) {
+    try {
+      final uri = Uri.parse(url);
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && context.mounted) {
+        SnackbarUtils.showError(context, 'Could not open this file.');
+      }
+    } catch (_) {
       if (context.mounted) {
         SnackbarUtils.showError(context, 'Could not open this file.');
       }
-      return;
     }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _share(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (context.mounted) {
+      SnackbarUtils.showSuccess(context, 'Link copied to clipboard');
+    }
   }
 
   @override
@@ -45,15 +53,24 @@ class PdfViewerScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'This PDF opens in your browser or PDF app.',
+              'AI-generated notes for this lesson â€” opens in your browser or PDF app.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 24),
             if (url.isEmpty)
               const Text('No PDF URL provided for this note.', style: TextStyle(color: AppColors.textSecondary))
-            else
+            else ...[
               CustomButton(label: 'Open PDF', onPressed: () => _open(context)),
+              const SizedBox(height: 12),
+              CustomButton(label: 'Download PDF', outlined: true, onPressed: () => _open(context)),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => _share(context),
+                icon: const Icon(Icons.share_outlined, size: 18),
+                label: const Text('Share'),
+              ),
+            ],
           ],
         ),
       ),

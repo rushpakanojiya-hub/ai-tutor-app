@@ -70,6 +70,15 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> delete(String path) async {
+    try {
+      final response = await _dio.delete(path);
+      return _asMap(response.data);
+    } on DioException catch (e) {
+      throw _translateError(e);
+    }
+  }
+
   Map<String, dynamic> _asMap(dynamic data) {
     if (data is Map<String, dynamic>) return data;
     return {'data': data};

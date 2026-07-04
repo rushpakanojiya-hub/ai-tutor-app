@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -6,8 +7,8 @@ import '../../providers/category_provider.dart';
 import '../../widgets/category_card.dart';
 import '../../widgets/skeleton_box.dart';
 
-/// Feature 1: grid of course categories (Academic, Programming, Science, ...).
-/// Reached from the Dashboard's "My Courses" card.
+/// Feature 1: grid of course categories. UI redesign only â€” data loading,
+/// search filtering, and navigation are unchanged from before.
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
 
@@ -30,7 +31,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Course Categories'),
+        title: const Text('Categories'),
         actions: [
           IconButton(
             icon: const Icon(Icons.search_rounded),
@@ -45,19 +46,26 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'Search categories...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  filled: true,
-                  fillColor: AppColors.surface,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
                 ),
-                onChanged: provider.updateSearchQuery,
-              ),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search categories...',
+                    prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.textSecondary),
+                    filled: true,
+                    fillColor: AppColors.card,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: provider.updateSearchQuery,
+                ),
+              ).animate().fadeIn(duration: 250.ms),
               const SizedBox(height: 20),
               Expanded(child: _buildBody(provider)),
             ],
@@ -74,7 +82,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
         childAspectRatio: 1.05,
-        children: List.generate(6, (_) => const SkeletonBox(height: double.infinity)),
+        children: List.generate(6, (_) => SkeletonBox(height: double.infinity, borderRadius: BorderRadius.circular(20))),
       );
     }
 
@@ -109,7 +117,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         return CategoryCard(
           category: category,
           onTap: () => context.push('/subjects', extra: {'categoryId': category.id, 'categoryName': category.name}),
-        );
+        ).animate().fadeIn(duration: 250.ms, delay: (index * 40).ms).scale(begin: const Offset(0.92, 0.92));
       },
     );
   }

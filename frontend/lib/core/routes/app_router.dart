@@ -1,5 +1,11 @@
 import 'package:go_router/go_router.dart';
+import '../../models/ai_content_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../screens/ai/ai_chat_screen.dart';
+import '../../screens/ai/ai_history_screen.dart';
+import '../../screens/ai/ai_tutor_screen.dart';
+import '../../screens/ai/homework_screen.dart';
+import '../../screens/ai/recommendation_screen.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/register_screen.dart';
 import '../../screens/categories/categories_screen.dart';
@@ -7,6 +13,7 @@ import '../../screens/dashboard/dashboard_screen.dart';
 import '../../screens/lessons/lesson_player_screen.dart';
 import '../../screens/lessons/lessons_screen.dart';
 import '../../screens/lessons/pdf_viewer_screen.dart';
+import '../../screens/lessons/quiz_screen.dart';
 import '../../screens/search/search_screen.dart';
 import '../../screens/splash/splash_screen.dart';
 import '../../screens/subjects/subjects_screen.dart';
@@ -77,6 +84,29 @@ class AppRouter {
         path: '/search',
         builder: (context, state) => const SearchScreen(),
       ),
+      GoRoute(
+        path: '/quiz',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return QuizScreen(
+            lessonId: extra['lessonId'] as int? ?? 0,
+            questions: (extra['questions'] as List<dynamic>? ?? []).cast<QuizQuestionModel>(),
+          );
+        },
+      ),
+
+      // --- Day 3: AI Tutor ---
+      GoRoute(path: '/ai-tutor', builder: (context, state) => const AiTutorScreen()),
+      GoRoute(
+        path: '/ai-chat',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return AiChatScreen(conversationId: extra?['conversationId'] as int?);
+        },
+      ),
+      GoRoute(path: '/ai-history', builder: (context, state) => const AiHistoryScreen()),
+      GoRoute(path: '/ai-recommendations', builder: (context, state) => const RecommendationScreen()),
+      GoRoute(path: '/ai-homework', builder: (context, state) => const HomeworkScreen()),
     ],
     redirect: (context, state) {
       final status = authProvider.status;

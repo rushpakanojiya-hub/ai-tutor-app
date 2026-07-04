@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../core/constants/api_constants.dart';
 import '../core/theme/app_colors.dart';
 import '../models/note_model.dart';
+import 'skeleton_box.dart';
 
 /// Renders the "PDF Notes" section under a lesson: a list of notes with
 /// "Open" (in-app viewer) and "Download" (external browser/app) actions.
@@ -20,9 +22,15 @@ class NotesWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          children: [
+            SkeletonBox(height: 48, borderRadius: BorderRadius.circular(12)),
+            const SizedBox(height: 8),
+            SkeletonBox(height: 48, borderRadius: BorderRadius.circular(12)),
+          ],
+        ),
       );
     }
 
@@ -73,7 +81,10 @@ class _NoteTile extends StatelessWidget {
             child: Text(note.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           TextButton(
-            onPressed: () => context.push('/pdf-viewer', extra: {'url': note.pdfUrl, 'title': note.title}),
+            onPressed: () => context.push(
+              '/pdf-viewer',
+              extra: {'url': ApiConstants.resolveMediaUrl(note.pdfUrl), 'title': note.title},
+            ),
             child: const Text('Open'),
           ),
         ],

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_theme.dart';
 import '../models/category_model.dart';
 
-/// Maps a category's icon name (from the backend) to a Flutter icon.
-/// Backend stores plain strings like "school", "code" â€” Icons.* constants
-/// are used here instead of raw emoji/unicode to avoid the PowerShell
-/// encoding corruption issue seen on other projects.
+/// Maps a category's icon name (from the backend) to a Material icon.
 IconData _iconFor(String icon) {
   switch (icon) {
     case 'school':
@@ -25,6 +23,15 @@ IconData _iconFor(String icon) {
   }
 }
 
+/// Cycles categories through the pastel palette so the grid doesn't look
+/// monochrome â€” purely cosmetic, unrelated to backend data.
+const _palette = [
+  (bg: AppColors.purpleLight, fg: AppColors.purple),
+  (bg: AppColors.orangeLight, fg: AppColors.orange),
+  (bg: AppColors.blueLight, fg: AppColors.blue),
+  (bg: AppColors.greenLight, fg: AppColors.green),
+];
+
 class CategoryCard extends StatelessWidget {
   final CategoryModel category;
   final VoidCallback onTap;
@@ -33,37 +40,41 @@ class CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4)),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), shape: BoxShape.circle),
-              child: Icon(_iconFor(category.icon), color: AppColors.primary, size: 28),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                category.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    final colors = _palette[category.id % _palette.length];
+
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        splashColor: colors.fg.withOpacity(0.15),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: AppTheme.softShadow,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: colors.bg, shape: BoxShape.circle),
+                child: Icon(_iconFor(category.icon), color: colors.fg, size: 28),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  category.name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

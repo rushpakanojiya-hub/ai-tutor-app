@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/search_provider.dart';
+import '../../widgets/skeleton_box.dart';
 
 /// Feature 6: live search across categories, subjects, and lessons, with a
 /// simple recent-searches history.
@@ -61,7 +62,11 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     if (provider.isLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+      return ListView.separated(
+        itemCount: 5,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (_, __) => SkeletonBox(height: 56, borderRadius: BorderRadius.circular(12)),
+      );
     }
 
     if (provider.errorMessage != null) {
