@@ -6,16 +6,17 @@ import '../../providers/ai_provider.dart';
 import '../../services/subject_service.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/typing_indicator.dart';
-import '../../widgets/voice_button.dart';
+import '../../widgets/voice_input_button.dart';
 
-/// AI Tutor chat: pick a subject (optional, for subject-specific answers),
-/// then chat. Supports English/Hindi/Marathi replies and basic
+/// AI Tutor chat: pick a subject (optional, for subject-aware answers),
+/// then chat with a real LLM (Groq, via the backend). Supports English/
+/// Hindi/Marathi replies, a ChatGPT-style typing animation, and basic
 /// speech-to-text voice input.
 class AiChatScreen extends StatefulWidget {
-  /// If opened from AiHistoryScreen to resume a saved conversation.
-  final int? conversationId;
+  /// If opened from AiHistoryScreen to resume a saved session.
+  final int? sessionId;
 
-  const AiChatScreen({super.key, this.conversationId});
+  const AiChatScreen({super.key, this.sessionId});
 
   @override
   State<AiChatScreen> createState() => _AiChatScreenState();
@@ -44,8 +45,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
     }
     if (mounted) setState(() => _loadingSubjects = false);
 
-    if (widget.conversationId != null) {
-      await context.read<AiProvider>().loadConversationIntoChat(widget.conversationId!);
+    if (widget.sessionId != null) {
+      await context.read<AiProvider>().loadSessionIntoChat(widget.sessionId!);
       if (mounted) setState(() => _selectedSubjectId = context.read<AiProvider>().currentSubjectId);
     } else {
       context.read<AiProvider>().startNewChat();
@@ -102,7 +103,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
           if (provider.chatError != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(provider.chatError!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
+              child: Row(
+                children: [
+                  Expanded(child: Text(provider.chatError!, style: const TextStyle(color: AppColors.error, fontSize: 12))),
+                  TextButton(onPressed: () => provider.retryLast(), child: const Text('Retry')),
+                ],
+              ),
             ),
           _buildInputBar(provider),
         ],
@@ -152,15 +158,25 @@ class _AiChatScreenState extends State<AiChatScreen> {
       );
     }
 
+    // Show the separate typing-dots indicator only before the streaming
+    // assistant bubble has received its first chunk (after that, the
+    // growing bubble itself is the "typing" signal).
+    final showTypingDots = provider.isSending &&
+        provider.messages.isNotEmpty &&
+        !provider.messages.last.isUser &&
+        provider.messages.last.message.isEmpty;
+
+    final displayMessages = showTypingDots ? provider.messages.sublist(0, provider.messages.length - 1) : provider.messages;
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: provider.messages.length + (provider.isSending ? 1 : 0),
+      itemCount: displayMessages.length + (showTypingDots ? 1 : 0),
       itemBuilder: (context, index) {
-        if (index == provider.messages.length) {
+        if (index == displayMessages.length) {
           return const Padding(padding: EdgeInsets.only(bottom: 8), child: TypingIndicator());
         }
-        final message = provider.messages[index];
+        final message = displayMessages[index];
         return Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: ChatBubble(
@@ -184,7 +200,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
         top: false,
         child: Row(
           children: [
-            VoiceButton(onResult: (text) => _controller.text = text),
+            VoiceInputButton(onResult: (text) => _controller.text = text),
             Expanded(
               child: TextField(
                 controller: _controller,

@@ -3,8 +3,7 @@ import '../../models/ai_content_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/ai/ai_chat_screen.dart';
 import '../../screens/ai/ai_history_screen.dart';
-import '../../screens/ai/ai_tutor_screen.dart';
-import '../../screens/ai/homework_screen.dart';
+import '../../screens/ai/ai_home_screen.dart';
 import '../../screens/ai/recommendation_screen.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/register_screen.dart';
@@ -96,17 +95,16 @@ class AppRouter {
       ),
 
       // --- Day 3: AI Tutor ---
-      GoRoute(path: '/ai-tutor', builder: (context, state) => const AiTutorScreen()),
+      GoRoute(path: '/ai-tutor', builder: (context, state) => const AiHomeScreen()),
       GoRoute(
         path: '/ai-chat',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
-          return AiChatScreen(conversationId: extra?['conversationId'] as int?);
+          return AiChatScreen(sessionId: extra?['sessionId'] as int?);
         },
       ),
       GoRoute(path: '/ai-history', builder: (context, state) => const AiHistoryScreen()),
       GoRoute(path: '/ai-recommendations', builder: (context, state) => const RecommendationScreen()),
-      GoRoute(path: '/ai-homework', builder: (context, state) => const HomeworkScreen()),
     ],
     redirect: (context, state) {
       final status = authProvider.status;

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -33,6 +34,17 @@ type Config struct {
 	JWTSecret            string
 	JWTAccessExpiryMin   int
 	JWTRefreshExpiryDays int
+
+	// Groq API — powers the real LLM AI Tutor (internal/ai/groq_client.go).
+	GroqAPIKey string
+	GroqAPIURL string
+	GroqModel  string
+
+	// YouTube Data API v3 — powers per-lesson recommended videos
+	// (internal/youtube/youtube_client.go). Supports multiple comma-separated
+	// keys for quota rotation, e.g. YOUTUBE_API_KEY=key1,key2,key3
+	YoutubeAPIKeys    []string
+	YoutubeMaxResults int
 }
 
 // LoadConfig reads the .env file (if present) and environment variables,
@@ -60,6 +72,13 @@ func LoadConfig() *Config {
 		JWTSecret:            getEnv("JWT_SECRET", "insecure_dev_secret_change_me"),
 		JWTAccessExpiryMin:   getEnvAsInt("JWT_ACCESS_EXPIRY_MINUTES", 60),
 		JWTRefreshExpiryDays: getEnvAsInt("JWT_REFRESH_EXPIRY_DAYS", 7),
+
+		GroqAPIKey: getEnv("GROQ_API_KEY", ""),
+		GroqAPIURL: getEnv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"),
+		GroqModel:  getEnv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+
+		YoutubeAPIKeys:    parseCommaList(getEnv("YOUTUBE_API_KEY", "")),
+		YoutubeMaxResults: getEnvAsInt("YOUTUBE_MAX_RESULTS", 5),
 	}
 }
 
@@ -90,4 +109,21 @@ func getEnvAsInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// parseCommaList splits a comma-separated env value into a trimmed,
+// non-empty slice. Used for YOUTUBE_API_KEY=key1,key2,key3 style rotation.
+func parseCommaList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }

@@ -3,11 +3,11 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
-/// AI Tutor home: 4 entry points â€” Ask Question (subject-scoped chat),
-/// Homework Help, Chat History, and Recommendations. Reached from the
-/// Dashboard's "AI Tutor" card / bottom nav tab.
-class AiTutorScreen extends StatelessWidget {
-  const AiTutorScreen({super.key});
+/// AI Tutor home: entry points to chat, homework help, chat history, and
+/// recommendations. Reached from the Dashboard's "AI Tutor" card / bottom
+/// nav tab.
+class AiHomeScreen extends StatelessWidget {
+  const AiHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +29,7 @@ class AiTutorScreen extends StatelessWidget {
               color: AppColors.purple,
               bg: AppColors.purpleLight,
               title: 'Ask Question',
-              subtitle: 'Chat with the AI Tutor about any subject',
+              subtitle: 'Chat with a real AI Tutor about any subject',
               onTap: () => context.push('/ai-chat'),
             ),
             const SizedBox(height: 14),
@@ -40,7 +40,7 @@ class AiTutorScreen extends StatelessWidget {
               bg: AppColors.orangeLight,
               title: 'Homework Help',
               subtitle: 'Get step-by-step help with your homework',
-              onTap: () => context.push('/ai-homework'),
+              onTap: () => context.push('/ai-chat'),
             ),
             const SizedBox(height: 14),
             _card(

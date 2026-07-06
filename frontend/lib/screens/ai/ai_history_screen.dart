@@ -6,8 +6,8 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/skeleton_box.dart';
 
-/// Lists the student's saved AI Tutor conversations. Tapping one resumes
-/// it in AiChatScreen; swiping/long-pressing deletes it.
+/// Lists the student's saved AI Tutor chat sessions. Tapping one resumes
+/// it in AiChatScreen; long-pressing or tapping the delete icon removes it.
 class AiHistoryScreen extends StatefulWidget {
   const AiHistoryScreen({super.key});
 
@@ -20,7 +20,7 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AiProvider>().loadConversations();
+      context.read<AiProvider>().loadSessions();
     });
   }
 
@@ -31,7 +31,7 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Chat History')),
       body: RefreshIndicator(
-        onRefresh: () => provider.loadConversations(),
+        onRefresh: () => provider.loadSessions(),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: _buildBody(provider),
@@ -41,7 +41,7 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
   }
 
   Widget _buildBody(AiProvider provider) {
-    if (provider.isLoadingConversations) {
+    if (provider.isLoadingSessions) {
       return ListView.separated(
         itemCount: 5,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -49,22 +49,22 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
       );
     }
 
-    if (provider.conversationsError != null) {
+    if (provider.sessionsError != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.error_outline, size: 48, color: AppColors.textSecondary),
             const SizedBox(height: 12),
-            Text(provider.conversationsError!, style: const TextStyle(color: AppColors.textSecondary)),
+            Text(provider.sessionsError!, style: const TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 12),
-            OutlinedButton(onPressed: () => provider.loadConversations(), child: const Text('Retry')),
+            OutlinedButton(onPressed: () => provider.loadSessions(), child: const Text('Retry')),
           ],
         ),
       );
     }
 
-    if (provider.conversations.isEmpty) {
+    if (provider.sessions.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -80,17 +80,17 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
     }
 
     return ListView.separated(
-      itemCount: provider.conversations.length,
+      itemCount: provider.sessions.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
-        final conv = provider.conversations[index];
+        final session = provider.sessions[index];
         return Material(
           color: AppColors.card,
           borderRadius: BorderRadius.circular(16),
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
-            onTap: () => context.push('/ai-chat', extra: {'conversationId': conv.id}),
-            onLongPress: () => _confirmDelete(context, provider, conv.id),
+            onTap: () => context.push('/ai-chat', extra: {'sessionId': session.id}),
+            onLongPress: () => _confirmDelete(context, provider, session.id),
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: AppTheme.softShadow),
@@ -99,11 +99,11 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
                   const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.purple),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(conv.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    child: Text(session.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 20),
-                    onPressed: () => _confirmDelete(context, provider, conv.id),
+                    onPressed: () => _confirmDelete(context, provider, session.id),
                   ),
                 ],
               ),
@@ -125,7 +125,7 @@ class _AiHistoryScreenState extends State<AiHistoryScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              provider.deleteConversation(id);
+              provider.deleteSession(id);
             },
             child: const Text('Delete', style: TextStyle(color: AppColors.error)),
           ),

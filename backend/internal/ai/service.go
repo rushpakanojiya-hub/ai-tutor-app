@@ -1,0 +1,124 @@
+package ai
+
+import (
+	"context"
+	"errors"
+
+	"ai-tutor-backend/internal/subjects"
+)
+
+// ErrAINotConfigured is returned when GROQ_API_KEY is missing - surfaced
+// as a clear "AI Tutor isn't set up yet" message rather than a raw network error.
+var ErrAINotConfigured = errors.New("AI Tutor is not configured on the server")
+
+// Service contains the business logic for AI Tutor chat: resolving/
+// creating sessions, loading context, calling Groq, and persisting the
+// conversation. All language generation is delegated to GroqClient -
+// nothing here does keyword matching or static responses.
+type Service struct {
+	repo         *Repository
+	subjectsRepo *subjects.Repository
+	groqClient   *GroqClient
+}
+
+// NewService wires a Repository, the subjects Repository (for subject-name
+// lookups used in the prompt), and a GroqClient into an ai Service.
+func NewService(repo *Repository, subjectsRepo *subjects.Repository, groqClient *GroqClient) *Service {
+	return &Service{repo: repo, subjectsRepo: subjectsRepo, groqClient: groqClient}
+}
+
+// resolveSession finds an existing session (verifying ownership) or
+// creates a new one, returning its ID.
+func (s *Service) resolveSession(userID int, req ChatRequest) (int, error) {
+	if req.SessionID != nil {
+		session, err := s.repo.FindSessionByID(userID, *req.SessionID)
+		if err != nil {
+			return 0, err
+		}
+		return session.ID, nil
+	}
+
+	title := req.Message
+	if len(title) > 50 {
+		title = title[:50] + "..."
+	}
+	return s.repo.CreateSession(userID, req.SubjectID, title)
+}
+
+// subjectName resolves a subject_id into its display name for the system
+// prompt (e.g. "Mathematics") - returns "" if none was given or it can't
+// be found, so a chat without a subject still works normally.
+func (s *Service) subjectName(subjectID *int) string {
+	if subjectID == nil {
+		return ""
+	}
+	subject, err := s.subjectsRepo.FindByID(*subjectID)
+	if err != nil {
+		return ""
+	}
+	return subject.Name
+}
+
+// Chat handles one turn: resolves/creates the session, loads the last 10
+// messages as context, sends everything to Groq, saves both the
+// student's message and the AI's reply, and returns the reply.
+func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatResponse, error) {
+	sessionID, err := s.resolveSession(userID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load history BEFORE saving the current message, so it isn't
+	// double-counted when prompt_builder.go appends req.Message itself.
+	history, err := s.repo.RecentMessages(sessionID, maxContextMessages)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.repo.AddMessage(sessionID, "user", req.Message); err != nil {
+		return nil, err
+	}
+
+	subjectName := s.subjectName(req.SubjectID)
+	messages := buildMessages(subjectName, req.Language, history, req.Message)
+
+	reply, err := s.groqClient.Chat(ctx, messages)
+	if err != nil {
+		if errors.Is(err, ErrNoAPIKey) {
+			return nil, ErrAINotConfigured
+		}
+		return nil, err
+	}
+
+	if _, err := s.repo.AddMessage(sessionID, "assistant", reply); err != nil {
+		return nil, err
+	}
+	if err := s.repo.TouchSession(sessionID); err != nil {
+		return nil, err
+	}
+
+	return &ChatResponse{SessionID: sessionID, Reply: reply}, nil
+}
+
+// ListSessions returns a user's chat session history.
+func (s *Service) ListSessions(userID int) ([]ChatSession, error) {
+	return s.repo.ListSessions(userID)
+}
+
+// GetSession returns a session with all of its messages.
+func (s *Service) GetSession(userID, sessionID int) (*SessionWithMessages, error) {
+	session, err := s.repo.FindSessionByID(userID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	messages, err := s.repo.ListMessages(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return &SessionWithMessages{ChatSession: *session, Messages: messages}, nil
+}
+
+// DeleteSession removes a session.
+func (s *Service) DeleteSession(userID, sessionID int) error {
+	return s.repo.DeleteSession(userID, sessionID)
+}

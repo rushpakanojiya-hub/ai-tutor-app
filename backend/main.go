@@ -10,14 +10,19 @@ import (
 
 	"ai-tutor-backend/configs"
 	"ai-tutor-backend/database"
+	"ai-tutor-backend/internal/ai"
+	"ai-tutor-backend/internal/aicontent"
 	"ai-tutor-backend/internal/auth"
 	"ai-tutor-backend/internal/categories"
 	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
+	"ai-tutor-backend/internal/progress"
+	"ai-tutor-backend/internal/recommendations"
 	"ai-tutor-backend/internal/search"
 	"ai-tutor-backend/internal/subjects"
 	"ai-tutor-backend/internal/users"
+	"ai-tutor-backend/internal/youtube"
 	"ai-tutor-backend/pkg/logger"
 )
 
@@ -30,6 +35,11 @@ func main() {
 
 	router := gin.Default()
 	router.Use(middleware.CORSMiddleware())
+
+	// Serves lesson PDF notes from backend/static/notes/*.pdf as
+	// http://<host>:<port>/static/notes/<file>.pdf — real, self-hosted
+	// content instead of random third-party URLs (see migration 000014).
+	router.Static("/static", "./static")
 
 	authMiddleware := middleware.AuthMiddleware(cfg.JWTSecret)
 
@@ -59,10 +69,33 @@ func main() {
 	notesService := notes.NewService(notesRepo)
 	notesHandler := notes.NewHandler(notesService)
 
-	// search reuses the categories/subjects/lessons repositories directly —
+	progressRepo := progress.NewRepository(db)
+	progressService := progress.NewService(progressRepo)
+	progressHandler := progress.NewHandler(progressService)
+
+	aiContentRepo := aicontent.NewRepository(db)
+	aiContentService := aicontent.NewService(aiContentRepo)
+	aiContentHandler := aicontent.NewHandler(aiContentService)
+
+	aiRepo := ai.NewRepository(db)
+	groqClient := ai.NewGroqClient(cfg.GroqAPIKey, cfg.GroqAPIURL, cfg.GroqModel)
+	aiService := ai.NewService(aiRepo, subjectsRepo, groqClient)
+	aiHandler := ai.NewHandler(aiService)
+
+	recommendationsRepo := recommendations.NewRepository(db)
+	recommendationsService := recommendations.NewService(recommendationsRepo)
+	recommendationsHandler := recommendations.NewHandler(recommendationsService)
+
+	// search reuses the categories/subjects/lessons/aicontent repositories directly —
 	// no separate "search" table exists, it's a fan-out query.
-	searchService := search.NewService(categoriesRepo, subjectsRepo, lessonsRepo)
+	searchService := search.NewService(categoriesRepo, subjectsRepo, lessonsRepo, aiContentRepo)
 	searchHandler := search.NewHandler(searchService)
+
+	// --- YouTube video integration (per-lesson recommended videos) ---
+	youtubeClient := youtube.NewClient(cfg.YoutubeAPIKeys, cfg.YoutubeMaxResults)
+	youtubeRepo := youtube.NewRepository(db)
+	youtubeService := youtube.NewService(youtubeRepo, youtubeClient)
+	youtubeHandler := youtube.NewHandler(youtubeService)
 
 	// --- Health checks (unchanged) ---
 	router.GET("/health", func(c *gin.Context) {
@@ -89,7 +122,12 @@ func main() {
 	subjects.RegisterRoutes(api, subjectsHandler, authMiddleware)
 	lessons.RegisterRoutes(api, lessonsHandler, authMiddleware)
 	notes.RegisterRoutes(api, notesHandler, authMiddleware)
+	progress.RegisterRoutes(api, progressHandler, authMiddleware)
+	aicontent.RegisterRoutes(api, aiContentHandler, authMiddleware)
+	ai.RegisterRoutes(api, aiHandler, authMiddleware)
+	recommendations.RegisterRoutes(api, recommendationsHandler, authMiddleware)
 	search.RegisterRoutes(api, searchHandler, authMiddleware)
+	youtube.RegisterRoutes(api, youtubeHandler, authMiddleware)
 
 	// Role-gated routes are still intentionally absent (see Day 1 notes) —
 	// when an admin dashboard exists, the POST endpoints above (create

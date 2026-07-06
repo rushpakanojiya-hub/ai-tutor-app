@@ -8,6 +8,7 @@ import 'providers/category_provider.dart';
 import 'providers/lesson_provider.dart';
 import 'providers/search_provider.dart';
 import 'providers/subject_provider.dart';
+import 'providers/youtube_provider.dart';
 
 void main() {
   runApp(const AiTutorApp());
@@ -27,6 +28,8 @@ class AiTutorApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LessonProvider()),
         ChangeNotifierProvider(create: (_) => SearchProvider()),
         ChangeNotifierProvider(create: (_) => AiProvider()),
+        // Lesson videos: YouTube recommended-videos integration.
+        ChangeNotifierProvider(create: (_) => YoutubeProvider()),
       ],
       child: Consumer<AuthProvider>(
         builder: (context, authProvider, _) {

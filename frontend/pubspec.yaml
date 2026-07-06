@@ -2,47 +2,35 @@ name: ai_tutor_app
 description: AI Tutor Mobile Application MVP - Day 1 (Auth + Dashboard shell)
 publish_to: 'none'
 version: 0.1.0
-
 environment:
   sdk: '>=3.3.0 <4.0.0'
-
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-
   # State management
   provider: ^6.1.2
-
   # Networking
   dio: ^5.4.3+1
-
   # Local storage (JWT token, user info)
   shared_preferences: ^2.2.3
-
   # Navigation
   go_router: ^14.2.0
-
   # Day 2: video playback
   video_player: ^2.9.1
   chewie: ^1.8.5
-
   # Day 2: PDF notes (opened externally to avoid native PDF-render plugin
   # Gradle conflicts with newer Android Gradle Plugin versions)
   url_launcher: ^6.3.0
-
-  # UI redesign (visual only â€” no logic changes)
+  # UI redesign (visual only — no logic changes)
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
   flutter_svg: ^2.0.10+1
-
   # AI Tutor: basic speech-to-text voice input
   speech_to_text: ^7.0.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
-
 flutter:
   uses-material-design: true

@@ -1,86 +1,53 @@
 import '../core/constants/api_constants.dart';
-import '../models/conversation.dart';
+import '../models/ai_session.dart';
 import '../models/recommendation.dart';
 import 'api_service.dart';
 
 /// Result of one chat turn.
 class ChatResult {
-  final int conversationId;
+  final int sessionId;
   final String reply;
-  ChatResult({required this.conversationId, required this.reply});
+  ChatResult({required this.sessionId, required this.reply});
 }
 
-/// Structured homework-help response.
-class HomeworkResult {
-  final String explanation;
-  final List<String> stepByStep;
-  final List<String> examples;
-  final List<String> tips;
-
-  HomeworkResult({
-    required this.explanation,
-    required this.stepByStep,
-    required this.examples,
-    required this.tips,
-  });
-
-  factory HomeworkResult.fromJson(Map<String, dynamic> json) {
-    return HomeworkResult(
-      explanation: json['explanation'] as String? ?? '',
-      stepByStep: (json['step_by_step'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-      examples: (json['examples'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-      tips: (json['tips'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-    );
-  }
-}
-
-/// Talks to the backend's /api/ai/* endpoints (chat, conversations,
-/// homework help, recommendations).
+/// Talks to the backend's /api/ai/* endpoints. The backend is the only
+/// thing that ever calls Groq - this service never holds or sends an API
+/// key, matching the required Flutter -> Go -> Groq architecture. Homework
+/// help isn't a separate endpoint: students just ask their homework
+/// question through the same chat (the real LLM solves it directly, step
+/// by step, without needing a dedicated code path).
 class AiService {
   final ApiService _api = ApiService();
 
   Future<ChatResult> sendMessage({
     required String message,
-    int? conversationId,
+    int? sessionId,
     int? subjectId,
     String language = 'en',
   }) async {
     final response = await _api.post(ApiConstants.aiChat, {
       'message': message,
-      if (conversationId != null) 'conversation_id': conversationId,
+      if (sessionId != null) 'session_id': sessionId,
       if (subjectId != null) 'subject_id': subjectId,
       'language': language,
     });
     final data = response['data'] as Map<String, dynamic>;
-    return ChatResult(conversationId: data['conversation_id'] as int, reply: data['reply'] as String);
+    return ChatResult(sessionId: data['session_id'] as int, reply: data['reply'] as String);
   }
 
-  Future<List<ConversationModel>> fetchConversations() async {
-    final response = await _api.get(ApiConstants.aiConversations);
+  Future<List<AiSessionModel>> fetchSessions() async {
+    final response = await _api.get(ApiConstants.aiSessions);
     final data = response['data'] as List<dynamic>? ?? [];
-    return data.map((json) => ConversationModel.fromJson(json as Map<String, dynamic>)).toList();
+    return data.map((json) => AiSessionModel.fromJson(json as Map<String, dynamic>)).toList();
   }
 
-  Future<ConversationWithMessagesModel> fetchConversation(int id) async {
-    final response = await _api.get(ApiConstants.aiConversation(id));
-    return ConversationWithMessagesModel.fromJson(response['data'] as Map<String, dynamic>);
+  Future<AiSessionWithMessagesModel> fetchSession(int id) async {
+    final response = await _api.get(ApiConstants.aiSession(id));
+    return AiSessionWithMessagesModel.fromJson(response['data'] as Map<String, dynamic>);
   }
 
-  Future<void> deleteConversation(int id) async {
-    await _api.delete(ApiConstants.aiConversation(id));
-  }
-
-  Future<HomeworkResult> requestHomeworkHelp({
-    required String question,
-    String subject = '',
-    String difficulty = '',
-  }) async {
-    final response = await _api.post(ApiConstants.aiHomework, {
-      'question': question,
-      'subject': subject,
-      'difficulty': difficulty,
-    });
-    return HomeworkResult.fromJson(response['data'] as Map<String, dynamic>);
+  Future<void> deleteSession(int id) async {
+    await _api.delete(ApiConstants.aiSession(id));
   }
 
   Future<List<RecommendationModel>> fetchRecommendations() async {

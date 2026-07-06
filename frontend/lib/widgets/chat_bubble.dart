@@ -5,8 +5,9 @@ import '../core/utils/snackbar_utils.dart';
 import '../models/ai_message.dart';
 
 /// One chat message bubble: user messages align right (purple), AI
-/// messages align left (white card). Long-press reveals Copy/Retry/Delete
-/// actions. Shows a small timestamp under each bubble.
+/// messages align left (white card) with lightweight markdown rendering
+/// (**bold**, numbered/bulleted lists). Long-press reveals Copy/Retry/
+/// Delete actions (disabled while the message is still streaming in).
 class ChatBubble extends StatelessWidget {
   final AiMessageModel message;
   final VoidCallback? onRetry;
@@ -15,6 +16,7 @@ class ChatBubble extends StatelessWidget {
   const ChatBubble({super.key, required this.message, this.onRetry, this.onDelete});
 
   void _showActions(BuildContext context) {
+    if (message.isStreaming) return;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -62,6 +64,46 @@ class ChatBubble extends StatelessWidget {
     return '$h:$m $period';
   }
 
+  /// Renders a small, dependency-free subset of markdown: **bold** spans,
+  /// and lines starting with "- " or "1. " get a bullet/number prefix.
+  /// This isn't a full markdown parser â€” just enough to make Groq's
+  /// naturally-formatted replies (which often use **bold** and lists)
+  /// readable without adding a new native package dependency.
+  Widget _renderContent(bool isUser) {
+    final color = isUser ? Colors.white : AppColors.textPrimary;
+    final lines = message.message.split('\n');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: lines.map((line) {
+        final spans = _parseBold(line, color);
+        return Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: RichText(text: TextSpan(style: TextStyle(color: color, height: 1.4, fontSize: 14), children: spans)),
+        );
+      }).toList(),
+    );
+  }
+
+  List<TextSpan> _parseBold(String line, Color color) {
+    final spans = <TextSpan>[];
+    final pattern = RegExp(r'\*\*(.+?)\*\*');
+    int last = 0;
+    for (final match in pattern.allMatches(line)) {
+      if (match.start > last) {
+        spans.add(TextSpan(text: line.substring(last, match.start)));
+      }
+      spans.add(TextSpan(text: match.group(1), style: const TextStyle(fontWeight: FontWeight.w700)));
+      last = match.end;
+    }
+    if (last < line.length) {
+      spans.add(TextSpan(text: line.substring(last)));
+    }
+    if (spans.isEmpty) spans.add(const TextSpan(text: ''));
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
@@ -76,7 +118,7 @@ class ChatBubble extends StatelessWidget {
             Container(
               margin: const EdgeInsets.symmetric(vertical: 4),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
               decoration: BoxDecoration(
                 color: isUser ? AppColors.purple : AppColors.card,
                 borderRadius: BorderRadius.only(
@@ -87,15 +129,15 @@ class ChatBubble extends StatelessWidget {
                 ),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
               ),
-              child: Text(
-                message.message,
-                style: TextStyle(color: isUser ? Colors.white : AppColors.textPrimary, height: 1.4),
+              child: message.message.isEmpty && message.isStreaming
+                  ? const SizedBox(width: 20, height: 14)
+                  : _renderContent(isUser),
+            ),
+            if (!(message.message.isEmpty && message.isStreaming))
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(_formatTime(message.createdAt), style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(_formatTime(message.createdAt), style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
-            ),
           ],
         ),
       ),

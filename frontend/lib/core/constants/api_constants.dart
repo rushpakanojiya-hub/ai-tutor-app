@@ -31,10 +31,14 @@ class ApiConstants {
 
   // --- AI Tutor ---
   static const String aiChat = '/ai/chat';
-  static const String aiConversations = '/ai/conversations';
-  static String aiConversation(int id) => '/ai/conversations/$id';
-  static const String aiHomework = '/ai/homework';
+  static const String aiSessions = '/ai/sessions';
+  static String aiSession(int id) => '/ai/sessions/$id';
   static const String aiRecommendations = '/ai/recommendations';
+
+  // --- YouTube video integration ---
+  static String lessonVideos(int lessonId) => '/lessons/$lessonId/videos';
+  static String lessonVideoProgress(int lessonId) => '/lessons/$lessonId/videos/progress';
+  static const String videoSearch = '/videos/search';
 
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 15);

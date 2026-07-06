@@ -1,28 +1,32 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/ai_message.dart';
-import '../models/conversation.dart';
+import '../models/ai_session.dart';
 import '../models/recommendation.dart';
 import '../services/ai_service.dart';
 import '../services/api_service.dart';
 
-/// Holds AI Tutor chat, conversation history, homework, and recommendation
-/// state. All persistence goes through the backend's /api/ai/* endpoints â€”
-/// there is no on-device or third-party AI call; replies come from the
-/// backend's rule-based knowledge engine.
+/// Holds AI Tutor chat, session history, and recommendation state. Every
+/// reply comes from the backend's POST /api/ai/chat, which is the only
+/// thing that ever calls Groq - the API key never touches the client.
+/// Homework help isn't a separate flow: students just type their homework
+/// question into chat and the real LLM solves it directly.
 class AiProvider extends ChangeNotifier {
   final AiService _service = AiService();
 
   // --- Chat ---
   List<AiMessageModel> messages = [];
-  int? currentConversationId;
+  int? currentSessionId;
   int? currentSubjectId;
   bool isSending = false;
   String? chatError;
   String language = 'en'; // 'en' | 'hi' | 'mr'
 
+  String _lastUserMessage = '';
+
   void startNewChat({int? subjectId}) {
     messages = [];
-    currentConversationId = null;
+    currentSessionId = null;
     currentSubjectId = subjectId;
     chatError = null;
     notifyListeners();
@@ -33,53 +37,89 @@ class AiProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sends a message, waits for the AI Tutor's full reply, then reveals it
+  /// with a word-by-word typing animation (ChatGPT-style) - the backend
+  /// call itself is a single request/response, not a live network stream.
   Future<void> sendMessage(String text) async {
     if (text.trim().isEmpty) return;
+    final trimmed = text.trim();
+    _lastUserMessage = trimmed;
 
-    final userMessage = AiMessageModel(
+    messages.add(AiMessageModel(
       id: DateTime.now().microsecondsSinceEpoch,
-      conversationId: currentConversationId ?? 0,
+      sessionId: currentSessionId ?? 0,
       role: 'user',
-      message: text.trim(),
+      message: trimmed,
       createdAt: DateTime.now(),
-    );
-    messages.add(userMessage);
+    ));
     isSending = true;
     chatError = null;
     notifyListeners();
 
     try {
       final result = await _service.sendMessage(
-        message: text.trim(),
-        conversationId: currentConversationId,
+        message: trimmed,
+        sessionId: currentSessionId,
         subjectId: currentSubjectId,
         language: language,
       );
-      currentConversationId = result.conversationId;
-      messages.add(AiMessageModel(
-        id: DateTime.now().microsecondsSinceEpoch + 1,
-        conversationId: result.conversationId,
-        role: 'assistant',
-        message: result.reply,
-        createdAt: DateTime.now(),
-      ));
-    } on ApiException catch (e) {
-      chatError = e.message;
-    } catch (e) {
-      chatError = 'Could not reach the AI Tutor. Please try again.';
-    }
+      currentSessionId = result.sessionId;
+      isSending = false;
 
-    isSending = false;
-    notifyListeners();
+      await _revealTyped(result.sessionId, result.reply);
+    } on ApiException catch (e) {
+      debugPrint('[AiProvider] ApiException: ${e.message} (status ${e.statusCode})');
+      chatError = e.message;
+      isSending = false;
+      notifyListeners();
+    } catch (e, stackTrace) {
+      debugPrint('[AiProvider] Unexpected error in sendMessage: $e');
+      debugPrint('[AiProvider] Stack trace: $stackTrace');
+      chatError = 'Could not reach the AI Tutor. Please try again.';
+      isSending = false;
+      notifyListeners();
+    }
   }
 
-  /// Re-sends the last user message (used by the chat bubble's "Retry"
-  /// action when a reply failed to arrive).
+  /// Reveals [fullText] into a new assistant message a few words at a time,
+  /// giving a typing-animation effect for the UI's "Chat UI" requirement.
+  Future<void> _revealTyped(int sessionId, String fullText) async {
+    final assistantId = DateTime.now().microsecondsSinceEpoch;
+    var current = AiMessageModel(
+      id: assistantId,
+      sessionId: sessionId,
+      role: 'assistant',
+      message: '',
+      createdAt: DateTime.now(),
+      isStreaming: true,
+    );
+    messages.add(current);
+    notifyListeners();
+
+    final words = fullText.split(' ');
+    final buffer = StringBuffer();
+    for (var i = 0; i < words.length; i++) {
+      buffer.write(i == 0 ? words[i] : ' ${words[i]}');
+      final index = messages.indexWhere((m) => m.id == assistantId);
+      if (index == -1) return; // message was deleted mid-animation
+      current = current.copyWith(message: buffer.toString());
+      messages[index] = current;
+      notifyListeners();
+      await Future.delayed(const Duration(milliseconds: 18));
+    }
+
+    final index = messages.indexWhere((m) => m.id == assistantId);
+    if (index != -1) {
+      messages[index] = messages[index].copyWith(isStreaming: false);
+      notifyListeners();
+    }
+  }
+
+  /// Re-sends the last user message (used by ChatBubble's "Retry" action).
   Future<void> retryLast() async {
-    final lastUser = messages.lastWhere((m) => m.isUser, orElse: () => messages.isEmpty ? AiMessageModel(id: 0, conversationId: 0, role: 'user', message: '', createdAt: DateTime.now()) : messages.last);
-    if (lastUser.message.isEmpty) return;
-    messages.removeWhere((m) => m.id == lastUser.id);
-    await sendMessage(lastUser.message);
+    if (_lastUserMessage.isEmpty) return;
+    messages.removeWhere((m) => m.isUser && m.message == _lastUserMessage);
+    await sendMessage(_lastUserMessage);
   }
 
   void deleteMessageLocally(int messageId) {
@@ -87,70 +127,49 @@ class AiProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadConversationIntoChat(int conversationId) async {
+  Future<void> loadSessionIntoChat(int sessionId) async {
     isSending = false;
     chatError = null;
     notifyListeners();
     try {
-      final conv = await _service.fetchConversation(conversationId);
-      currentConversationId = conv.conversation.id;
-      currentSubjectId = conv.conversation.subjectId;
-      messages = conv.messages;
+      final session = await _service.fetchSession(sessionId);
+      currentSessionId = session.session.id;
+      currentSubjectId = session.session.subjectId;
+      messages = session.messages;
     } catch (e) {
       chatError = 'Could not load this conversation.';
     }
     notifyListeners();
   }
 
-  // --- Conversation history ---
-  List<ConversationModel> conversations = [];
-  bool isLoadingConversations = false;
-  String? conversationsError;
+  // --- Session history ---
+  List<AiSessionModel> sessions = [];
+  bool isLoadingSessions = false;
+  String? sessionsError;
 
-  Future<void> loadConversations() async {
-    isLoadingConversations = true;
-    conversationsError = null;
+  Future<void> loadSessions() async {
+    isLoadingSessions = true;
+    sessionsError = null;
     notifyListeners();
     try {
-      conversations = await _service.fetchConversations();
+      sessions = await _service.fetchSessions();
     } on ApiException catch (e) {
-      conversationsError = e.message;
+      sessionsError = e.message;
     } catch (e) {
-      conversationsError = 'Could not load chat history.';
+      sessionsError = 'Could not load chat history.';
     }
-    isLoadingConversations = false;
+    isLoadingSessions = false;
     notifyListeners();
   }
 
-  Future<void> deleteConversation(int id) async {
+  Future<void> deleteSession(int id) async {
     try {
-      await _service.deleteConversation(id);
-      conversations.removeWhere((c) => c.id == id);
+      await _service.deleteSession(id);
+      sessions.removeWhere((s) => s.id == id);
       notifyListeners();
     } catch (_) {
       // best-effort
     }
-  }
-
-  // --- Homework ---
-  HomeworkResult? homeworkResult;
-  bool isLoadingHomework = false;
-  String? homeworkError;
-
-  Future<void> submitHomework({required String question, String subject = '', String difficulty = ''}) async {
-    isLoadingHomework = true;
-    homeworkError = null;
-    homeworkResult = null;
-    notifyListeners();
-    try {
-      homeworkResult = await _service.requestHomeworkHelp(question: question, subject: subject, difficulty: difficulty);
-    } on ApiException catch (e) {
-      homeworkError = e.message;
-    } catch (e) {
-      homeworkError = 'Could not get homework help. Please try again.';
-    }
-    isLoadingHomework = false;
-    notifyListeners();
   }
 
   // --- Recommendations ---

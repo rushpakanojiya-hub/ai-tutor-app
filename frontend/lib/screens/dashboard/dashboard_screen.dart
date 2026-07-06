@@ -10,7 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/lesson_service.dart';
 import '../../services/storage_service.dart';
 import '../categories/categories_screen.dart';
-import '../ai/ai_tutor_screen.dart';
+import '../ai/ai_home_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/skeleton_box.dart';
 
@@ -29,7 +29,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _pages = const [
     _DashboardHome(),
     CategoriesScreen(),
-    AiTutorScreen(),
+    AiHomeScreen(),
     ProfileScreen(),
   ];
 

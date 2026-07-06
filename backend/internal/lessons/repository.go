@@ -18,15 +18,16 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-const selectColumns = `id, subject_id, title, description, video_url, pdf_url, duration, order_number, created_at`
+const selectColumns = `id, subject_id, title, description, video_url, pdf_url, thumbnail_url, duration, order_number, created_at`
 
 func scanLesson(row interface{ Scan(...any) error }) (Lesson, error) {
 	var l Lesson
-	var description, videoURL, pdfURL sql.NullString
-	err := row.Scan(&l.ID, &l.SubjectID, &l.Title, &description, &videoURL, &pdfURL, &l.Duration, &l.OrderNumber, &l.CreatedAt)
+	var description, videoURL, pdfURL, thumbnailURL sql.NullString
+	err := row.Scan(&l.ID, &l.SubjectID, &l.Title, &description, &videoURL, &pdfURL, &thumbnailURL, &l.Duration, &l.OrderNumber, &l.CreatedAt)
 	l.Description = description.String
 	l.VideoURL = videoURL.String
 	l.PDFURL = pdfURL.String
+	l.ThumbnailURL = thumbnailURL.String
 	return l, err
 }
 
@@ -68,13 +69,13 @@ func (r *Repository) FindByID(id int) (*Lesson, error) {
 func (r *Repository) Create(req CreateLessonRequest) (int, error) {
 	var id int
 	query := `
-		INSERT INTO lessons (subject_id, title, description, video_url, pdf_url, duration, order_number)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO lessons (subject_id, title, description, video_url, pdf_url, thumbnail_url, duration, order_number)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id
 	`
 	err := r.db.QueryRow(
 		query,
-		req.SubjectID, req.Title, req.Description, req.VideoURL, req.PDFURL, req.Duration, req.OrderNumber,
+		req.SubjectID, req.Title, req.Description, req.VideoURL, req.PDFURL, req.ThumbnailURL, req.Duration, req.OrderNumber,
 	).Scan(&id)
 	return id, err
 }

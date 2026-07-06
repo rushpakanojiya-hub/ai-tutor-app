@@ -2,25 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../core/theme/app_colors.dart';
 
-/// Basic speech-to-text mic button: tap to start listening, tap again (or
-/// pause) to stop. Converts speech to text and hands it to [onResult] â€”
-/// there is no text-to-speech or streaming voice assistant, per the "basic
-/// voice input only" scope.
+/// Basic speech-to-text mic button: tap to start listening, tap again to
+/// stop. Converts speech to text and hands it to [onResult] â€” no
+/// text-to-speech, per the "voice input only" scope.
 ///
 /// If the device denies microphone permission or speech recognition isn't
-/// available, the button disables itself instead of crashing â€” this
-/// package needs RECORD_AUDIO permission declared in AndroidManifest.xml
-/// (see setup notes).
-class VoiceButton extends StatefulWidget {
+/// available, the button disables itself instead of crashing â€” needs
+/// RECORD_AUDIO permission declared in AndroidManifest.xml.
+class VoiceInputButton extends StatefulWidget {
   final void Function(String text) onResult;
 
-  const VoiceButton({super.key, required this.onResult});
+  const VoiceInputButton({super.key, required this.onResult});
 
   @override
-  State<VoiceButton> createState() => _VoiceButtonState();
+  State<VoiceInputButton> createState() => _VoiceInputButtonState();
 }
 
-class _VoiceButtonState extends State<VoiceButton> {
+class _VoiceInputButtonState extends State<VoiceInputButton> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
   bool _isAvailable = true;

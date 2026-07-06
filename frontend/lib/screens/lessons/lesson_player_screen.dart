@@ -11,13 +11,14 @@ import '../../providers/lesson_provider.dart';
 import '../../services/lesson_service.dart';
 import '../../widgets/notes_widget.dart';
 import '../../widgets/skeleton_box.dart';
+import '../lesson_videos_screen.dart';
 
 /// Full lesson player: optional video, AI-generated explanation/key
-/// points/examples/practice questions/summary, a Quiz button, PDF notes,
-/// Previous/Next navigation, and Mark Complete.
+/// points/examples/practice questions/summary, a Quiz button, recommended
+/// YouTube videos, PDF notes, Previous/Next navigation, and Mark Complete.
 ///
 /// If a lesson has no video, this screen shows the lesson's educational
-/// thumbnail with "Educational content available â€” read notes below"
+/// thumbnail with "Educational content available — read notes below"
 /// instead of an error, per the "no placeholder video" content strategy.
 class LessonPlayerScreen extends StatefulWidget {
   final int lessonId;
@@ -159,6 +160,8 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
                             const SizedBox(height: 24),
                             _buildAiContentSection(lessonProvider),
                             const SizedBox(height: 24),
+                            _buildVideosSection(),
+                            const SizedBox(height: 24),
                             Container(
                               padding: const EdgeInsets.all(18),
                               decoration: BoxDecoration(
@@ -178,6 +181,25 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
                     ],
                   ),
                 ),
+    );
+  }
+
+  /// Recommended Videos — sits between AI Explanation and PDF Notes.
+  /// Does not touch AI content, notes, progress, or the video player above.
+  Widget _buildVideosSection() {
+    if (_lesson == null) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppTheme.softShadow,
+      ),
+      child: LessonVideosScreen(
+        lessonId: _lesson!.id,
+        lessonTitle: _lesson!.title,
+      ),
     );
   }
 
@@ -405,7 +427,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
 
   Widget _buildMediaArea() {
     if (_lesson == null || _lesson!.videoUrl.isEmpty) {
-      // No placeholder/cartoon video â€” show the lesson's educational
+      // No placeholder/cartoon video — show the lesson's educational
       // thumbnail (if any) with a message pointing to the notes below.
       final thumb = _lesson?.thumbnailUrl ?? '';
       return Container(
