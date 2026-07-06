@@ -9,8 +9,8 @@ import '../services/api_service.dart';
 /// Holds AI Tutor chat, session history, and recommendation state. Every
 /// reply comes from the backend's POST /api/ai/chat, which is the only
 /// thing that ever calls Groq - the API key never touches the client.
-/// Homework help isn't a separate flow: students just type their homework
-/// question into chat and the real LLM solves it directly.
+/// Homework help isn't a separate flow: it's a mode flag sent alongside
+/// the same chat message, which changes the system prompt server-side.
 class AiProvider extends ChangeNotifier {
   final AiService _service = AiService();
 
@@ -21,6 +21,7 @@ class AiProvider extends ChangeNotifier {
   bool isSending = false;
   String? chatError;
   String language = 'en'; // 'en' | 'hi' | 'mr'
+  bool homeworkMode = false;
 
   String _lastUserMessage = '';
 
@@ -34,6 +35,16 @@ class AiProvider extends ChangeNotifier {
 
   void setLanguage(String lang) {
     language = lang;
+    notifyListeners();
+  }
+
+  void setSubject(int? subjectId) {
+    currentSubjectId = subjectId;
+    notifyListeners();
+  }
+
+  void toggleHomeworkMode() {
+    homeworkMode = !homeworkMode;
     notifyListeners();
   }
 
@@ -62,6 +73,7 @@ class AiProvider extends ChangeNotifier {
         sessionId: currentSessionId,
         subjectId: currentSubjectId,
         language: language,
+        mode: homeworkMode ? 'homework' : 'normal',
       );
       currentSessionId = result.sessionId;
       isSending = false;
@@ -122,6 +134,27 @@ class AiProvider extends ChangeNotifier {
     await sendMessage(_lastUserMessage);
   }
 
+  /// Regenerates a specific assistant reply: removes that assistant
+  /// message (and the user message that prompted it), then re-sends the
+  /// same question fresh - used by ChatBubble's "Regenerate" action.
+  Future<void> regenerate(int assistantMessageId) async {
+    final idx = messages.indexWhere((m) => m.id == assistantMessageId);
+    if (idx <= 0) return;
+
+    String? userText;
+    for (var i = idx - 1; i >= 0; i--) {
+      if (messages[i].isUser) {
+        userText = messages[i].message;
+        break;
+      }
+    }
+    if (userText == null) return;
+
+    messages.removeAt(idx);
+    messages.removeWhere((m) => m.isUser && m.message == userText);
+    await sendMessage(userText);
+  }
+
   void deleteMessageLocally(int messageId) {
     messages.removeWhere((m) => m.id == messageId);
     notifyListeners();
@@ -166,6 +199,9 @@ class AiProvider extends ChangeNotifier {
     try {
       await _service.deleteSession(id);
       sessions.removeWhere((s) => s.id == id);
+      if (currentSessionId == id) {
+        startNewChat();
+      }
       notifyListeners();
     } catch (_) {
       // best-effort

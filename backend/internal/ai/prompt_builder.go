@@ -8,9 +8,9 @@ import "fmt"
 const maxContextMessages = 10
 
 // buildSystemPrompt constructs the instruction Groq receives before any
-// conversation history. This is what makes the AI Tutor subject-aware and
-// language-aware, entirely replacing the old rule-based keyword matching.
-func buildSystemPrompt(subjectName, language string) string {
+// conversation history. This is what makes the AI Tutor subject-aware,
+// language-aware, and homework-mode-aware.
+func buildSystemPrompt(subjectName, language, mode string) string {
 	prompt := `You are an advanced AI Tutor.
 
 You help students learn.
@@ -39,6 +39,17 @@ Your responses must:
 		prompt += fmt.Sprintf("\n\nCurrent subject:\n%s", subjectName)
 	}
 
+	if mode == "homework" {
+		prompt += `
+
+Homework Help Mode is ON. For every question, structure your answer as:
+1. Clearly numbered steps
+2. Any formulas used, shown explicitly
+3. The calculation at each step
+4. At least one fully worked example
+5. End with 1-2 short practice questions for the student to try themselves`
+	}
+
 	switch language {
 	case "hi":
 		prompt += "\n\nRespond in Hindi."
@@ -54,8 +65,8 @@ Your responses must:
 // student's current message. This is where "context memory" happens - the
 // LLM sees the whole recent conversation and resolves references like
 // "its types" itself.
-func buildMessages(subjectName, language string, history []ChatMessage, currentMessage string) []ChatCompletionMessage {
-	messages := []ChatCompletionMessage{{Role: "system", Content: buildSystemPrompt(subjectName, language)}}
+func buildMessages(subjectName, language, mode string, history []ChatMessage, currentMessage string) []ChatCompletionMessage {
+	messages := []ChatCompletionMessage{{Role: "system", Content: buildSystemPrompt(subjectName, language, mode)}}
 
 	for _, m := range history {
 		messages = append(messages, ChatCompletionMessage{Role: m.Role, Content: m.Message})

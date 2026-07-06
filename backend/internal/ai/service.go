@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"ai-tutor-backend/internal/streak"
 	"ai-tutor-backend/internal/subjects"
 )
 
@@ -19,12 +20,14 @@ type Service struct {
 	repo         *Repository
 	subjectsRepo *subjects.Repository
 	groqClient   *GroqClient
+	streakSvc    *streak.Service
 }
 
 // NewService wires a Repository, the subjects Repository (for subject-name
-// lookups used in the prompt), and a GroqClient into an ai Service.
-func NewService(repo *Repository, subjectsRepo *subjects.Repository, groqClient *GroqClient) *Service {
-	return &Service{repo: repo, subjectsRepo: subjectsRepo, groqClient: groqClient}
+// lookups used in the prompt), a GroqClient, and the shared streak Service
+// into an ai Service.
+func NewService(repo *Repository, subjectsRepo *subjects.Repository, groqClient *GroqClient, streakSvc *streak.Service) *Service {
+	return &Service{repo: repo, subjectsRepo: subjectsRepo, groqClient: groqClient, streakSvc: streakSvc}
 }
 
 // resolveSession finds an existing session (verifying ownership) or
@@ -52,7 +55,7 @@ func (s *Service) subjectName(subjectID *int) string {
 	if subjectID == nil {
 		return ""
 	}
-	subject, err := s.subjectsRepo.FindByID(*subjectID)
+	subject, err := s.subjectsRepo.FindByID(0, *subjectID)
 	if err != nil {
 		return ""
 	}
@@ -80,7 +83,7 @@ func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatR
 	}
 
 	subjectName := s.subjectName(req.SubjectID)
-	messages := buildMessages(subjectName, req.Language, history, req.Message)
+	messages := buildMessages(subjectName, req.Language, req.Mode, history, req.Message)
 
 	reply, err := s.groqClient.Chat(ctx, messages)
 	if err != nil {
@@ -96,6 +99,7 @@ func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatR
 	if err := s.repo.TouchSession(sessionID); err != nil {
 		return nil, err
 	}
+	_ = s.streakSvc.RecordActivity(userID) // best-effort
 
 	return &ChatResponse{SessionID: sessionID, Reply: reply}, nil
 }

@@ -7,13 +7,21 @@ import '../models/ai_message.dart';
 /// One chat message bubble: user messages align right (purple), AI
 /// messages align left (white card) with lightweight markdown rendering
 /// (**bold**, numbered/bulleted lists). Long-press reveals Copy/Retry/
-/// Delete actions (disabled while the message is still streaming in).
+/// Regenerate/Delete actions (disabled while the message is still
+/// streaming in).
 class ChatBubble extends StatelessWidget {
   final AiMessageModel message;
   final VoidCallback? onRetry;
+  final VoidCallback? onRegenerate;
   final VoidCallback? onDelete;
 
-  const ChatBubble({super.key, required this.message, this.onRetry, this.onDelete});
+  const ChatBubble({
+    super.key,
+    required this.message,
+    this.onRetry,
+    this.onRegenerate,
+    this.onDelete,
+  });
 
   void _showActions(BuildContext context) {
     if (message.isStreaming) return;
@@ -42,6 +50,15 @@ class ChatBubble extends StatelessWidget {
                   onRetry!();
                 },
               ),
+            if (!message.isUser && onRegenerate != null)
+              ListTile(
+                leading: const Icon(Icons.autorenew_rounded),
+                title: const Text('Regenerate'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onRegenerate!();
+                },
+              ),
             if (onDelete != null)
               ListTile(
                 leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
@@ -66,7 +83,7 @@ class ChatBubble extends StatelessWidget {
 
   /// Renders a small, dependency-free subset of markdown: **bold** spans,
   /// and lines starting with "- " or "1. " get a bullet/number prefix.
-  /// This isn't a full markdown parser â€” just enough to make Groq's
+  /// This isn't a full markdown parser — just enough to make Groq's
   /// naturally-formatted replies (which often use **bold** and lists)
   /// readable without adding a new native package dependency.
   Widget _renderContent(bool isUser) {

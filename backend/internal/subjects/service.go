@@ -12,19 +12,19 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// List returns every subject.
-func (s *Service) List() ([]Subject, error) {
-	return s.repo.FindAll()
+// List returns every subject, with progress computed for userID.
+func (s *Service) List(userID int) ([]Subject, error) {
+	return s.repo.FindAll(userID)
 }
 
 // ListByCategory returns every subject in one category.
-func (s *Service) ListByCategory(categoryID int) ([]Subject, error) {
-	return s.repo.FindByCategoryID(categoryID)
+func (s *Service) ListByCategory(userID, categoryID int) ([]Subject, error) {
+	return s.repo.FindByCategoryID(userID, categoryID)
 }
 
 // GetByID returns a single subject by ID.
-func (s *Service) GetByID(id int) (*Subject, error) {
-	return s.repo.FindByID(id)
+func (s *Service) GetByID(userID, id int) (*Subject, error) {
+	return s.repo.FindByID(userID, id)
 }
 
 // Create validates and inserts a new subject.

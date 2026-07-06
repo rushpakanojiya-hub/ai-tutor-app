@@ -22,7 +22,9 @@ func NewHandler(service *Service) *Handler {
 
 // List handles GET /api/subjects.
 func (h *Handler) List(c *gin.Context) {
-	list, err := h.service.List()
+	userID := c.GetInt("user_id")
+
+	list, err := h.service.List(userID)
 	if err != nil {
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load subjects")
 		return
@@ -38,7 +40,9 @@ func (h *Handler) ListByCategory(c *gin.Context) {
 		return
 	}
 
-	list, err := h.service.ListByCategory(categoryID)
+	userID := c.GetInt("user_id")
+
+	list, err := h.service.ListByCategory(userID, categoryID)
 	if err != nil {
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load subjects")
 		return
@@ -54,7 +58,9 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
-	subject, err := h.service.GetByID(id)
+	userID := c.GetInt("user_id")
+
+	subject, err := h.service.GetByID(userID, id)
 	if err != nil {
 		if errors.Is(err, ErrSubjectNotFound) {
 			utils.RespondError(c, http.StatusNotFound, "Subject not found")

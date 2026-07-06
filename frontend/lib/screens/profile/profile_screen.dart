@@ -70,6 +70,18 @@ class ProfileScreen extends StatelessWidget {
           ).animate().fadeIn(duration: 250.ms, delay: 100.ms),
           const SizedBox(height: 12),
           _ProfileMenuTile(
+            icon: Icons.bar_chart_rounded,
+            label: 'Quiz Analytics',
+            onTap: () => context.push('/quiz-analytics'),
+          ).animate().fadeIn(duration: 250.ms, delay: 130.ms),
+          const SizedBox(height: 12),
+          _ProfileMenuTile(
+            icon: Icons.auto_awesome_rounded,
+            label: 'AI Quiz Generator',
+            onTap: () => context.push('/ai-quiz-generator'),
+          ).animate().fadeIn(duration: 250.ms, delay: 145.ms),
+          const SizedBox(height: 12),
+          _ProfileMenuTile(
             icon: Icons.logout_rounded,
             label: 'Logout',
             color: AppColors.error,

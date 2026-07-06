@@ -18,6 +18,8 @@ import (
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
 	"ai-tutor-backend/internal/progress"
+	"ai-tutor-backend/internal/quiz"
+	"ai-tutor-backend/internal/streak"
 	"ai-tutor-backend/internal/recommendations"
 	"ai-tutor-backend/internal/search"
 	"ai-tutor-backend/internal/subjects"
@@ -69,8 +71,13 @@ func main() {
 	notesService := notes.NewService(notesRepo)
 	notesHandler := notes.NewHandler(notesService)
 
+	// --- Learning Streak: real activity-based streak, fed by progress/quiz/ai below ---
+	streakRepo := streak.NewRepository(db)
+	streakService := streak.NewService(streakRepo)
+	streakHandler := streak.NewHandler(streakService)
+
 	progressRepo := progress.NewRepository(db)
-	progressService := progress.NewService(progressRepo)
+	progressService := progress.NewService(progressRepo, streakService)
 	progressHandler := progress.NewHandler(progressService)
 
 	aiContentRepo := aicontent.NewRepository(db)
@@ -79,7 +86,7 @@ func main() {
 
 	aiRepo := ai.NewRepository(db)
 	groqClient := ai.NewGroqClient(cfg.GroqAPIKey, cfg.GroqAPIURL, cfg.GroqModel)
-	aiService := ai.NewService(aiRepo, subjectsRepo, groqClient)
+	aiService := ai.NewService(aiRepo, subjectsRepo, groqClient, streakService)
 	aiHandler := ai.NewHandler(aiService)
 
 	recommendationsRepo := recommendations.NewRepository(db)
@@ -96,6 +103,11 @@ func main() {
 	youtubeRepo := youtube.NewRepository(db)
 	youtubeService := youtube.NewService(youtubeRepo, youtubeClient)
 	youtubeHandler := youtube.NewHandler(youtubeService)
+
+	// --- Quiz & Assessment: persisted attempts, results, analytics, AI quiz generator ---
+	quizRepo := quiz.NewRepository(db)
+	quizService := quiz.NewService(quizRepo, groqClient, streakService)
+	quizHandler := quiz.NewHandler(quizService)
 
 	// --- Health checks (unchanged) ---
 	router.GET("/health", func(c *gin.Context) {
@@ -128,6 +140,8 @@ func main() {
 	recommendations.RegisterRoutes(api, recommendationsHandler, authMiddleware)
 	search.RegisterRoutes(api, searchHandler, authMiddleware)
 	youtube.RegisterRoutes(api, youtubeHandler, authMiddleware)
+	quiz.RegisterRoutes(api, quizHandler, authMiddleware)
+	streak.RegisterRoutes(api, streakHandler, authMiddleware)
 
 	// Role-gated routes are still intentionally absent (see Day 1 notes) —
 	// when an admin dashboard exists, the POST endpoints above (create

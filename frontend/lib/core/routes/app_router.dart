@@ -1,10 +1,8 @@
 import 'package:go_router/go_router.dart';
 import '../../models/ai_content_model.dart';
+import '../../models/quiz_attempt_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../screens/ai/ai_chat_screen.dart';
-import '../../screens/ai/ai_history_screen.dart';
-import '../../screens/ai/ai_home_screen.dart';
-import '../../screens/ai/recommendation_screen.dart';
+import '../../screens/ai/ai_tutor_screen.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/register_screen.dart';
 import '../../screens/categories/categories_screen.dart';
@@ -13,6 +11,8 @@ import '../../screens/lessons/lesson_player_screen.dart';
 import '../../screens/lessons/lessons_screen.dart';
 import '../../screens/lessons/pdf_viewer_screen.dart';
 import '../../screens/lessons/quiz_screen.dart';
+import '../../screens/quiz/ai_quiz_generator_screen.dart';
+import '../../screens/quiz/quiz_analytics_screen.dart';
 import '../../screens/search/search_screen.dart';
 import '../../screens/splash/splash_screen.dart';
 import '../../screens/subjects/subjects_screen.dart';
@@ -88,23 +88,26 @@ class AppRouter {
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return QuizScreen(
-            lessonId: extra['lessonId'] as int? ?? 0,
+            lessonId: extra['lessonId'] as int?,
+            subjectId: extra['subjectId'] as int?,
+            topic: extra['topic'] as String?,
             questions: (extra['questions'] as List<dynamic>? ?? []).cast<QuizQuestionModel>(),
+            freeformQuestions: (extra['freeformQuestions'] as List<dynamic>?)?.cast<QuizAttemptQuestion>(),
           );
         },
       ),
-
-      // --- Day 3: AI Tutor ---
-      GoRoute(path: '/ai-tutor', builder: (context, state) => const AiHomeScreen()),
       GoRoute(
-        path: '/ai-chat',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          return AiChatScreen(sessionId: extra?['sessionId'] as int?);
-        },
+        path: '/ai-quiz-generator',
+        builder: (context, state) => const AiQuizGeneratorScreen(),
       ),
-      GoRoute(path: '/ai-history', builder: (context, state) => const AiHistoryScreen()),
-      GoRoute(path: '/ai-recommendations', builder: (context, state) => const RecommendationScreen()),
+      GoRoute(
+        path: '/quiz-analytics',
+        builder: (context, state) => const QuizAnalyticsScreen(),
+      ),
+
+      // --- AI Tutor: single ChatGPT-style screen (chat + history drawer +
+      // recommendations + homework mode, all in one) ---
+      GoRoute(path: '/ai-tutor', builder: (context, state) => const AiTutorScreen()),
     ],
     redirect: (context, state) {
       final status = authProvider.status;

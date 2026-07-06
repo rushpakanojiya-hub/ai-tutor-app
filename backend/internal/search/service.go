@@ -49,7 +49,7 @@ func (s *Service) Search(query string) (*Results, error) {
 	if err != nil {
 		return nil, err
 	}
-	subs, err := s.subjectsRepo.SearchByName(query)
+	subs, err := s.subjectsRepo.SearchByName(0, query)
 	if err != nil {
 		return nil, err
 	}

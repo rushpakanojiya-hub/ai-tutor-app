@@ -39,6 +39,7 @@ type ChatRequest struct {
 	SubjectID *int   `json:"subject_id"` // which subject this chat is scoped to (optional)
 	Message   string `json:"message" binding:"required"`
 	Language  string `json:"language"` // "en" (default) | "hi" | "mr"
+	Mode      string `json:"mode"`     // "normal" (default) | "homework"
 }
 
 // ChatResponse is returned by POST /api/ai/chat.

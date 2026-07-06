@@ -40,6 +40,17 @@ class ApiConstants {
   static String lessonVideoProgress(int lessonId) => '/lessons/$lessonId/videos/progress';
   static const String videoSearch = '/videos/search';
 
+  // --- Quiz & Assessment ---
+  static String submitLessonQuizAttempt(int lessonId) => '/quiz/lessons/$lessonId/attempt';
+  static const String submitFreeformQuizAttempt = '/quiz/freeform/attempt';
+  static const String quizAttempts = '/quiz/attempts';
+  static String quizAttempt(int id) => '/quiz/attempts/$id';
+  static const String quizAnalytics = '/quiz/analytics';
+  static const String quizGenerate = '/quiz/generate';
+
+  // --- Learning Streak ---
+  static const String streak = '/streak';
+
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 15);
 
