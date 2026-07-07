@@ -30,6 +30,8 @@ const baseSelect = `
 		(SELECT COUNT(*) FROM lesson_ai_content ac JOIN lessons l ON l.id = ac.lesson_id
 			WHERE l.subject_id = s.id AND ac.quiz_json IS NOT NULL AND ac.quiz_json::text <> '[]') AS quiz_count,
 		(SELECT COALESCE(SUM(l.duration), 0) FROM lessons l WHERE l.subject_id = s.id) AS total_duration_minutes,
+		(SELECT COALESCE(SUM(l.duration), 0) FROM lessons l JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1
+			WHERE l.subject_id = s.id) AS completed_duration_minutes,
 		(SELECT COUNT(*) FROM lessons l WHERE l.subject_id = s.id) AS total_for_progress,
 		(SELECT COUNT(*) FROM lessons l JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1
 			WHERE l.subject_id = s.id) AS completed_for_progress
@@ -39,16 +41,17 @@ const baseSelect = `
 func scanSubject(row interface{ Scan(...any) error }) (Subject, error) {
 	var s Subject
 	var description, thumbnail sql.NullString
-	var totalDurationMinutes, totalForProgress, completedForProgress int
+	var totalDurationMinutes, completedDurationMinutes, totalForProgress, completedForProgress int
 
 	err := row.Scan(
 		&s.ID, &s.CategoryID, &s.Name, &description, &thumbnail, &s.Difficulty, &s.CreatedAt,
 		&s.LessonCount, &s.NotesCount, &s.QuizCount,
-		&totalDurationMinutes, &totalForProgress, &completedForProgress,
+		&totalDurationMinutes, &completedDurationMinutes, &totalForProgress, &completedForProgress,
 	)
 	s.Description = description.String
 	s.Thumbnail = thumbnail.String
 	s.LearningHours = float64(totalDurationMinutes) / 60.0
+	s.CompletedHours = float64(completedDurationMinutes) / 60.0
 	s.CompletedLessons = completedForProgress
 
 	if totalForProgress > 0 {

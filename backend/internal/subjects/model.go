@@ -26,6 +26,7 @@ type Subject struct {
 	NotesCount         int       `json:"notes_count"`
 	QuizCount          int       `json:"quiz_count"`
 	LearningHours      float64   `json:"learning_hours"`
+	CompletedHours     float64   `json:"completed_hours"`
 	ProgressPercentage float64   `json:"progress_percentage"` // 0-100, for the requesting user
 	CreatedAt          time.Time `json:"created_at"`
 }

@@ -133,10 +133,24 @@ type SubjectAccuracy struct {
 	Accuracy    float64 `json:"accuracy"` // 0-100
 }
 
-// Analytics is the response for GET /api/quiz/analytics.
+// DayAccuracy is one point in the weekly performance trend.
+type DayAccuracy struct {
+	Date     string  `json:"date"`
+	Accuracy float64 `json:"accuracy"`
+	Attempts int     `json:"attempts"`
+}
+
+// Analytics is the response for GET /api/quiz/analytics - all computed
+// from the current user's real quiz_attempts rows. PassedCount/FailedCount
+// use a 60% score threshold (same threshold used for "weak topics").
 type Analytics struct {
 	TotalAttempts   int               `json:"total_attempts"`
 	OverallAccuracy float64           `json:"overall_accuracy"`
+	PassedCount     int               `json:"passed_count"`
+	FailedCount     int               `json:"failed_count"`
+	AverageScore    float64           `json:"average_score"`
+	HighestScore    int               `json:"highest_score"`
 	BySubject       []SubjectAccuracy `json:"by_subject"`
 	WeakTopics      []SubjectAccuracy `json:"weak_topics"`
+	WeeklyTrend     []DayAccuracy     `json:"weekly_trend"`
 }

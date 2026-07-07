@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
+	"time"
 )
 
 // Repository handles direct SQL access for quiz attempts and analytics.
@@ -253,6 +254,75 @@ func (r *Repository) GetAnalytics(userID int) (*Analytics, error) {
 	}
 	if totalQuestions > 0 {
 		analytics.OverallAccuracy = (float64(totalCorrect) / float64(totalQuestions)) * 100
+	}
+
+	// Passed/failed (60% threshold), average score, highest score - all
+	// derived directly from each attempt's stored score_percent.
+	const passThreshold = 60
+	scoreRows, err := r.db.Query(`SELECT score_percent FROM quiz_attempts WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	var scoreSum, scoreCount, highest int
+	for scoreRows.Next() {
+		var score int
+		if err := scoreRows.Scan(&score); err != nil {
+			scoreRows.Close()
+			return nil, err
+		}
+		scoreSum += score
+		scoreCount++
+		if score > highest {
+			highest = score
+		}
+		if score >= passThreshold {
+			analytics.PassedCount++
+		} else {
+			analytics.FailedCount++
+		}
+	}
+	scoreRows.Close()
+	if scoreCount > 0 {
+		analytics.AverageScore = float64(scoreSum) / float64(scoreCount)
+	}
+	analytics.HighestScore = highest
+
+	// Weekly trend: one accuracy point per day for the last 7 days.
+	trendRows, err := r.db.Query(`
+		SELECT created_at::date, COUNT(*), COALESCE(SUM(correct_count), 0), COALESCE(SUM(total_questions), 0)
+		FROM quiz_attempts
+		WHERE user_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '6 days'
+		GROUP BY created_at::date
+		ORDER BY created_at::date`, userID)
+	if err != nil {
+		return nil, err
+	}
+	dayMap := map[string]DayAccuracy{}
+	for trendRows.Next() {
+		var date time.Time
+		var attempts, correct, questions int
+		if err := trendRows.Scan(&date, &attempts, &correct, &questions); err != nil {
+			trendRows.Close()
+			return nil, err
+		}
+		acc := 0.0
+		if questions > 0 {
+			acc = (float64(correct) / float64(questions)) * 100
+		}
+		key := date.Format("2006-01-02")
+		dayMap[key] = DayAccuracy{Date: key, Accuracy: acc, Attempts: attempts}
+	}
+	trendRows.Close()
+
+	today := time.Now()
+	for i := 6; i >= 0; i-- {
+		day := today.AddDate(0, 0, -i)
+		key := day.Format("2006-01-02")
+		if d, ok := dayMap[key]; ok {
+			analytics.WeeklyTrend = append(analytics.WeeklyTrend, d)
+		} else {
+			analytics.WeeklyTrend = append(analytics.WeeklyTrend, DayAccuracy{Date: key, Accuracy: 0, Attempts: 0})
+		}
 	}
 
 	rows, err := r.db.Query(`

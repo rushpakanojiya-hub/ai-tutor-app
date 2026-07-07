@@ -14,7 +14,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 // MarkComplete records that userID has completed lessonID, optionally with
 // a quiz score (0-100). Calling this again for the same (user, lesson)
-// pair refreshes completed_at/score instead of erroring â€” re-watching a
+// pair refreshes completed_at/score instead of erroring - re-watching a
 // lesson or retaking its quiz keeps the latest result.
 func (r *Repository) MarkComplete(userID, lessonID int, score *int) error {
 	query := `
@@ -25,6 +25,14 @@ func (r *Repository) MarkComplete(userID, lessonID int, score *int) error {
 	`
 	_, err := r.db.Exec(query, userID, lessonID, score)
 	return err
+}
+
+// GetLessonSubjectID resolves a lesson's subject_id - used to auto-enroll
+// a student in that subject when they complete the lesson.
+func (r *Repository) GetLessonSubjectID(lessonID int) (int, error) {
+	var subjectID int
+	err := r.db.QueryRow(`SELECT subject_id FROM lessons WHERE id = $1`, lessonID).Scan(&subjectID)
+	return subjectID, err
 }
 
 // GetSubjectProgress returns the total lesson count for a subject, the

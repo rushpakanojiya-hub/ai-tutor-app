@@ -10,10 +10,13 @@ import (
 
 	"ai-tutor-backend/configs"
 	"ai-tutor-backend/database"
+	"ai-tutor-backend/internal/admin"
 	"ai-tutor-backend/internal/ai"
 	"ai-tutor-backend/internal/aicontent"
+	"ai-tutor-backend/internal/assignment"
 	"ai-tutor-backend/internal/auth"
 	"ai-tutor-backend/internal/categories"
+	"ai-tutor-backend/internal/enrollment"
 	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
@@ -76,8 +79,18 @@ func main() {
 	streakService := streak.NewService(streakRepo)
 	streakHandler := streak.NewHandler(streakService)
 
+	// --- Student Enrollment: auto-enrolled on lesson completion, gates
+	// assignment visibility (see internal/assignment) ---
+	enrollmentRepo := enrollment.NewRepository(db)
+	enrollmentService := enrollment.NewService(enrollmentRepo)
+
+	// --- Admin dashboard: real platform-wide counts ---
+	adminRepo := admin.NewRepository(db)
+	adminService := admin.NewService(adminRepo)
+	adminHandler := admin.NewHandler(adminService)
+
 	progressRepo := progress.NewRepository(db)
-	progressService := progress.NewService(progressRepo, streakService)
+	progressService := progress.NewService(progressRepo, streakService, enrollmentService)
 	progressHandler := progress.NewHandler(progressService)
 
 	aiContentRepo := aicontent.NewRepository(db)
@@ -88,6 +101,11 @@ func main() {
 	groqClient := ai.NewGroqClient(cfg.GroqAPIKey, cfg.GroqAPIURL, cfg.GroqModel)
 	aiService := ai.NewService(aiRepo, subjectsRepo, groqClient, streakService)
 	aiHandler := ai.NewHandler(aiService)
+
+	// --- Assignment & AI Auto Evaluation (Phase 1: subject-level targeting) ---
+	assignmentRepo := assignment.NewRepository(db)
+	assignmentService := assignment.NewService(assignmentRepo, subjectsRepo, groqClient, streakService)
+	assignmentHandler := assignment.NewHandler(assignmentService)
 
 	recommendationsRepo := recommendations.NewRepository(db)
 	recommendationsService := recommendations.NewService(recommendationsRepo)
@@ -142,6 +160,10 @@ func main() {
 	youtube.RegisterRoutes(api, youtubeHandler, authMiddleware)
 	quiz.RegisterRoutes(api, quizHandler, authMiddleware)
 	streak.RegisterRoutes(api, streakHandler, authMiddleware)
+	admin.RegisterRoutes(api, adminHandler, authMiddleware, middleware.RequireAdmin())
+	assignment.RegisterRoutes(api, assignmentHandler, authMiddleware, middleware.RequireTeacher())
+	assignment.RegisterSubjectRoute(api, assignmentHandler, authMiddleware)
+	assignment.RegisterAdminRoutes(api, assignmentHandler, authMiddleware, middleware.RequireAdmin())
 
 	// Role-gated routes are still intentionally absent (see Day 1 notes) —
 	// when an admin dashboard exists, the POST endpoints above (create
