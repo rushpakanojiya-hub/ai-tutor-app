@@ -13,7 +13,8 @@ class AssignmentModel {
   final int? passingMarks;
   final DateTime? startDate;
   final DateTime? dueDate;
-  final String status; // draft | published | unpublished | archived
+  final String status; // draft | published | unpublished | closed | archived
+  final String myStatus; // student-facing: not_started | draft | submitted | evaluated | returned
   final int submissionCount;
   final DateTime createdAt;
 
@@ -33,6 +34,7 @@ class AssignmentModel {
     this.startDate,
     this.dueDate,
     required this.status,
+    this.myStatus = 'not_started',
     required this.submissionCount,
     required this.createdAt,
   });
@@ -54,6 +56,7 @@ class AssignmentModel {
       startDate: json['start_date'] != null ? DateTime.tryParse(json['start_date'] as String) : null,
       dueDate: json['due_date'] != null ? DateTime.tryParse(json['due_date'] as String) : null,
       status: json['status'] as String? ?? 'draft',
+      myStatus: json['my_status'] as String? ?? 'not_started',
       submissionCount: json['submission_count'] as int? ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );

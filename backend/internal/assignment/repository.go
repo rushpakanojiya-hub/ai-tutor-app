@@ -180,6 +180,43 @@ const assignmentSelect = `
 	LEFT JOIN subjects s ON s.id = t.target_id
 `
 
+// assignmentSelectForStudent additionally selects that student's own
+// submission status (or 'not_started' if none exists) - used only by the
+// two student-facing list queries below. $N below is always the
+// student_id parameter - callers must pass it as the query's last arg.
+func assignmentSelectForStudent(studentIDPlaceholder string) string {
+	return `
+	SELECT a.id, a.teacher_id, u.name, t.target_id, s.name,
+	       a.title, a.description, a.instructions, a.difficulty, a.estimated_minutes,
+	       a.max_marks, a.passing_marks, a.start_date, a.due_date, a.status,
+	       COALESCE((SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id), 0),
+	       a.created_at, a.updated_at,
+	       COALESCE((SELECT sub2.status FROM assignment_submissions sub2 WHERE sub2.assignment_id = a.id AND sub2.student_id = ` + studentIDPlaceholder + `), 'not_started')
+	FROM assignments a
+	JOIN users u ON u.id = a.teacher_id
+	LEFT JOIN assignment_targets t ON t.assignment_id = a.id AND t.target_type = 'subject'
+	LEFT JOIN subjects s ON s.id = t.target_id
+`
+}
+
+func scanAssignmentWithMyStatus(row interface{ Scan(...any) error }) (Assignment, error) {
+	var a Assignment
+	var subjectID sql.NullInt64
+	var subjectName sql.NullString
+	err := row.Scan(
+		&a.ID, &a.TeacherID, &a.TeacherName, &subjectID, &subjectName,
+		&a.Title, &a.Description, &a.Instructions, &a.Difficulty, &a.EstimatedMinutes,
+		&a.MaxMarks, &a.PassingMarks, &a.StartDate, &a.DueDate, &a.Status,
+		&a.SubmissionCount, &a.CreatedAt, &a.UpdatedAt, &a.MyStatus,
+	)
+	if subjectID.Valid {
+		id := int(subjectID.Int64)
+		a.SubjectID = &id
+	}
+	a.SubjectName = subjectName.String
+	return a, err
+}
+
 func scanAssignment(row interface{ Scan(...any) error }) (Assignment, error) {
 	var a Assignment
 	var subjectID sql.NullInt64
@@ -224,15 +261,52 @@ func (r *Repository) ListForTeacher(teacherID int) ([]Assignment, error) {
 // students see anything (see internal/enrollment - a student is enrolled
 // automatically once they complete any lesson in the subject).
 func (r *Repository) ListPublishedForSubject(subjectID, studentID int) ([]Assignment, error) {
-	rows, err := r.db.Query(assignmentSelect+`
+	rows, err := r.db.Query(assignmentSelectForStudent("$2")+`
 		WHERE t.target_type = 'subject' AND t.target_id = $1 AND a.status = 'published'
-		AND EXISTS (SELECT 1 FROM subject_enrollments se WHERE se.student_id = $2 AND se.subject_id = $1)
 		ORDER BY a.due_date ASC NULLS LAST, a.created_at DESC`, subjectID, studentID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAssignmentRows(rows)
+
+	var result []Assignment
+	for rows.Next() {
+		a, err := scanAssignmentWithMyStatus(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, a)
+	}
+	return result, rows.Err()
+}
+
+// ListPublishedForStudent returns every published assignment across every
+// subject the student is enrolled in - powers the dedicated Assignments
+// tab and the Home dashboard "New Assignment" card, so a student doesn't
+// have to dig through Course -> Subject -> Lesson to find one.
+// ListPublishedForStudent returns every published assignment across every
+// subject - powers the dedicated Assignments tab and the Home dashboard
+// "New Assignment" card. No enrollment restriction: every student can
+// already see every subject's lessons in this app, so assignments follow
+// the same open-access model.
+func (r *Repository) ListPublishedForStudent(studentID int) ([]Assignment, error) {
+	rows, err := r.db.Query(assignmentSelectForStudent("$1")+`
+		WHERE t.target_type = 'subject' AND a.status = 'published'
+		ORDER BY a.due_date ASC NULLS LAST, a.created_at DESC`, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []Assignment
+	for rows.Next() {
+		a, err := scanAssignmentWithMyStatus(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, a)
+	}
+	return result, rows.Err()
 }
 
 // ListAllForAdmin returns every assignment platform-wide, for monitoring.
@@ -243,6 +317,73 @@ func (r *Repository) ListAllForAdmin() ([]Assignment, error) {
 	}
 	defer rows.Close()
 	return scanAssignmentRows(rows)
+}
+
+// GetTargetSubjectID returns the subject this assignment targets
+// (Phase 1: always exactly one subject target).
+func (r *Repository) GetTargetSubjectID(assignmentID int) (int, error) {
+	var subjectID int
+	err := r.db.QueryRow(`
+		SELECT target_id FROM assignment_targets
+		WHERE assignment_id = $1 AND target_type = 'subject' LIMIT 1`, assignmentID).Scan(&subjectID)
+	return subjectID, err
+}
+
+// GetEnrolledStudentIDs returns every student enrolled in a subject - the
+// fan-out list for "new assignment published" notifications.
+func (r *Repository) GetEnrolledStudentIDs(subjectID int) ([]int, error) {
+	rows, err := r.db.Query(`SELECT student_id FROM subject_enrollments WHERE subject_id = $1`, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// GetSubmissionStudentID is used to know who to notify after a teacher review.
+func (r *Repository) GetSubmissionStudentID(submissionID int) (int, error) {
+	var studentID int
+	err := r.db.QueryRow(`SELECT student_id FROM assignment_submissions WHERE id = $1`, submissionID).Scan(&studentID)
+	return studentID, err
+}
+
+// ListForStudent returns every published assignment across every subject
+// the student is enrolled in, with their own submission status attached -
+// so the student doesn't have to dig through Course -> Subject -> Lesson
+// to find assignments (Home dashboard and a dedicated Assignments tab
+// both use this).
+func (r *Repository) ListForStudent(studentID int) ([]Assignment, error) {
+	rows, err := r.db.Query(assignmentSelect+`
+		WHERE t.target_type = 'subject' AND a.status IN ('published', 'closed')
+		AND EXISTS (SELECT 1 FROM subject_enrollments se WHERE se.student_id = $1 AND se.subject_id = t.target_id)
+		ORDER BY a.due_date ASC NULLS LAST, a.created_at DESC`, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	assignments, err := scanAssignmentRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	// Attach each assignment's status for THIS student (pending/submitted/evaluated/etc).
+	for i := range assignments {
+		var status sql.NullString
+		_ = r.db.QueryRow(`SELECT status FROM assignment_submissions WHERE assignment_id = $1 AND student_id = $2`,
+			assignments[i].ID, studentID).Scan(&status)
+		assignments[i].MySubmissionStatus = status.String
+	}
+
+	return assignments, nil
 }
 
 func scanAssignmentRows(rows *sql.Rows) ([]Assignment, error) {

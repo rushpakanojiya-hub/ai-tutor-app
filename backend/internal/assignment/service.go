@@ -78,6 +78,10 @@ func (s *Service) ListPublishedForSubject(subjectID, studentID int) ([]Assignmen
 	return s.repo.ListPublishedForSubject(subjectID, studentID)
 }
 
+func (s *Service) ListPublishedForStudent(studentID int) ([]Assignment, error) {
+	return s.repo.ListPublishedForStudent(studentID)
+}
+
 func (s *Service) ListAllForAdmin() ([]Assignment, error) {
 	return s.repo.ListAllForAdmin()
 }

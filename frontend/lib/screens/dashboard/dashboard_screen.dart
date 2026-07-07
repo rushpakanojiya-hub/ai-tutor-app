@@ -4,21 +4,25 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/assignment_model.dart';
 import '../../models/recommendation.dart';
 import '../../models/subject_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/assignment_service.dart';
 import '../../services/quiz_service.dart';
 import '../../services/streak_service.dart';
 import '../../services/subject_service.dart';
 import '../ai/ai_tutor_screen.dart';
+import '../assignments/student_assignments_screen.dart';
 import '../categories/categories_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/skeleton_box.dart';
 
-/// Student dashboard shell: 4 tabs (Home, Courses, AI Tutor, Profile) plus
-/// a floating center action button (AI Quiz Generator) docked into a
-/// notched bottom bar.
+/// Student dashboard shell: 5 tabs (Home, Courses, Assignments, AI Tutor,
+/// Profile). The AI Quiz Generator quick-launch lives on the Home
+/// dashboard's own Quiz card and in Profile - no separate floating
+/// button needed once Assignments has a proper tab.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -29,12 +33,13 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
-  final _pages = const [
-    _DashboardHome(),
-    CategoriesScreen(),
-    AiTutorScreen(),
-    ProfileScreen(),
-  ];
+  List<Widget> _pages(bool isStudent) => [
+        const _DashboardHome(),
+        const CategoriesScreen(),
+        if (isStudent) const StudentAssignmentsScreen(),
+        const AiTutorScreen(),
+        const ProfileScreen(),
+      ];
 
   Widget _navItem(int index, IconData outlined, IconData filled, String label) {
     final selected = _currentIndex == index;
@@ -44,9 +49,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(selected ? filled : outlined, color: selected ? AppColors.purple : AppColors.textSecondary, size: 24),
+            Icon(selected ? filled : outlined, color: selected ? AppColors.purple : AppColors.textSecondary, size: 22),
             const SizedBox(height: 3),
-            Text(label, style: TextStyle(fontSize: 11, color: selected ? AppColors.purple : AppColors.textSecondary)),
+            Text(label, style: TextStyle(fontSize: 10, color: selected ? AppColors.purple : AppColors.textSecondary)),
           ],
         ),
       ),
@@ -55,11 +60,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isStudent = context.watch<AuthProvider>().currentUser?.role == 'student';
+    final pages = _pages(isStudent);
+    if (_currentIndex >= pages.length) _currentIndex = 0;
+
     return Scaffold(
       backgroundColor: AppColors.pageBackground,
-      body: SafeArea(child: _pages[_currentIndex]),
+      body: SafeArea(child: pages[_currentIndex]),
       bottomNavigationBar: Container(
-        height: 78,
+        height: 72,
         decoration: BoxDecoration(
           color: AppColors.card,
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, -4))],
@@ -68,27 +77,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             _navItem(0, Icons.home_outlined, Icons.home_rounded, 'Home'),
             _navItem(1, Icons.menu_book_outlined, Icons.menu_book_rounded, 'Courses'),
-            Expanded(
-              child: Transform.translate(
-                offset: const Offset(0, -16),
-                child: InkWell(
-                  onTap: () => context.push('/ai-quiz-generator'),
-                  customBorder: const CircleBorder(),
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFF6D5FFD)]),
-                      boxShadow: [BoxShadow(color: AppColors.purple.withOpacity(0.35), blurRadius: 16, offset: const Offset(0, 6))],
-                    ),
-                    child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 24),
-                  ),
-                ),
-              ),
-            ),
-            _navItem(2, Icons.smart_toy_outlined, Icons.smart_toy_rounded, 'AI Tutor'),
-            _navItem(3, Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
+            if (isStudent) _navItem(2, Icons.assignment_outlined, Icons.assignment_rounded, 'Assignments'),
+            _navItem(isStudent ? 3 : 2, Icons.smart_toy_outlined, Icons.smart_toy_rounded, 'AI Tutor'),
+            _navItem(isStudent ? 4 : 3, Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
           ],
         ),
       ),
@@ -107,11 +98,13 @@ class _DashboardHomeState extends State<_DashboardHome> {
   final SubjectService _subjectService = SubjectService();
   final QuizService _quizService = QuizService();
   final StreakService _streakService = StreakService();
+  final AssignmentService _assignmentService = AssignmentService();
 
   List<SubjectModel> _subjects = [];
   int _totalAttempts = 0;
   double _accuracy = 0;
   StreakSummary? _streak;
+  List<AssignmentModel> _pendingAssignments = [];
   bool _isLoading = true;
 
   @override
@@ -133,6 +126,13 @@ class _DashboardHomeState extends State<_DashboardHome> {
     try {
       _streak = await _streakService.fetchSummary();
     } catch (_) {}
+    if (context.read<AuthProvider>().currentUser?.role == 'student') {
+      try {
+        _pendingAssignments = (await _assignmentService.fetchForStudent())
+            .where((a) => a.myStatus == 'not_started' || a.myStatus == 'draft')
+            .toList();
+      } catch (_) {}
+    }
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -161,6 +161,12 @@ class _DashboardHomeState extends State<_DashboardHome> {
           const SizedBox(height: 24),
           _buildSearchBar(),
           const SizedBox(height: 24),
+          if (_pendingAssignments.isNotEmpty) ...[
+            _sectionHeader('New Assignments', onSeeAll: () => context.push('/assignment-detail', extra: {'assignmentId': _pendingAssignments.first.id})),
+            const SizedBox(height: 12),
+            ..._pendingAssignments.take(2).map(_buildAssignmentCard),
+            const SizedBox(height: 20),
+          ],
           _buildQuickAccessGrid(),
           const SizedBox(height: 32),
           _buildStreakHero(),
@@ -219,6 +225,85 @@ class _DashboardHomeState extends State<_DashboardHome> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAssignmentCard(AssignmentModel a) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => context.push('/assignment-detail', extra: {'assignmentId': a.id}),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: AppTheme.softShadow),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(color: AppColors.purple.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.assignment_rounded, color: AppColors.purple, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(a.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text('${a.subjectName} \u2022 ${a.teacherName}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (a.dueDate != null)
+                      _pill(Icons.event_outlined, 'Due ${a.dueDate!.day}/${a.dueDate!.month}'),
+                    _pill(Icons.grade_outlined, '${a.maxMarks} marks'),
+                    _pill(Icons.speed_outlined, a.difficulty),
+                    if (a.estimatedMinutes != null) _pill(Icons.timer_outlined, '${a.estimatedMinutes} min'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => context.push('/assignment-detail', extra: {'assignmentId': a.id}),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.purple),
+                    child: const Text('Start Assignment'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: AppColors.pageBackground, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppColors.textSecondary),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+        ],
+      ),
     );
   }
 

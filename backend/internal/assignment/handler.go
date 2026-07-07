@@ -193,6 +193,18 @@ func (h *Handler) ListForSubject(c *gin.Context) {
 	utils.RespondSuccess(c, http.StatusOK, "Assignments fetched", list)
 }
 
+// ListForStudent handles GET /api/assignments/for-student - every
+// published assignment across every subject the student is enrolled in.
+func (h *Handler) ListForStudent(c *gin.Context) {
+	studentID := c.GetInt("user_id")
+	list, err := h.service.ListPublishedForStudent(studentID)
+	if err != nil {
+		utils.RespondError(c, http.StatusInternalServerError, "Failed to load assignments")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Assignments fetched", list)
+}
+
 // TeacherAnalytics handles GET /api/assignments/analytics (teacher-scoped).
 func (h *Handler) TeacherAnalytics(c *gin.Context) {
 	teacherID := c.GetInt("user_id")

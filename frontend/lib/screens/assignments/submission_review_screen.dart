@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/assignment_model.dart';
+import '../../services/api_service.dart';
 import '../../services/assignment_service.dart';
 import '../../widgets/skeleton_box.dart';
 
-/// Teacher's review queue for one assignment: sees each student's
-/// submission plus the AI evaluation, and can optionally override the
-/// score and add written feedback (fully optional per the spec).
+/// Teacher's review queue for one assignment: a compact list, tapping a
+/// submission opens the full review page (SubmissionDetailReviewScreen)
+/// where the complete answer is readable before scoring it.
 class SubmissionReviewScreen extends StatefulWidget {
   final int assignmentId;
   final String title;
@@ -44,64 +45,6 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _openReview(AssignmentSubmissionModel sub) async {
-    final scoreController = TextEditingController(text: sub.evaluation?.teacherOverrideScore?.toString() ?? sub.evaluation?.aiScore?.toString() ?? '');
-    final feedbackController = TextEditingController(text: sub.evaluation?.teacherFeedback ?? '');
-
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Review: ${sub.studentName}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: scoreController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: 'Score (out of ${sub.evaluation?.maxScore ?? 10})', border: const OutlineInputBorder()),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: feedbackController,
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Feedback for student', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.purple),
-                child: const Text('Save Review'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (result == true) {
-      try {
-        await _service.reviewSubmission(
-          sub.id,
-          overrideScore: int.tryParse(scoreController.text),
-          feedback: feedbackController.text.trim(),
-        );
-        _load();
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save review.')));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,7 +53,7 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: _isLoading
-            ? ListView(children: List.generate(3, (_) => const Padding(padding: EdgeInsets.all(16), child: SkeletonBox(height: 100, borderRadius: BorderRadius.all(Radius.circular(18))))))
+            ? ListView(children: List.generate(3, (_) => const Padding(padding: EdgeInsets.all(16), child: SkeletonBox(height: 90, borderRadius: BorderRadius.all(Radius.circular(18))))))
             : _error != null
                 ? ListView(children: [const SizedBox(height: 80), Center(child: Text(_error!))])
                 : _submissions.isEmpty
@@ -121,36 +64,216 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
                         itemBuilder: (context, index) {
                           final sub = _submissions[index];
                           final eval = sub.evaluation;
+                          final reviewed = eval?.reviewedByTeacher ?? false;
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20), boxShadow: AppTheme.softShadow),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(child: Text(sub.studentName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-                                    if (eval != null)
-                                      Text('${eval.teacherOverrideScore ?? eval.aiScore ?? 0}/${eval.maxScore ?? 0}', style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.w700)),
-                                  ],
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Material(
+                              color: AppColors.card,
+                              borderRadius: BorderRadius.circular(18),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () async {
+                                  final updated = await Navigator.push<AssignmentSubmissionModel>(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => SubmissionDetailReviewScreen(submission: sub)),
+                                  );
+                                  if (updated != null) _load();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: AppTheme.softShadow),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(sub.studentName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              reviewed ? 'Reviewed' : (eval != null ? 'AI evaluated - awaiting your review' : 'Evaluating...'),
+                                              style: TextStyle(fontSize: 11, color: reviewed ? AppColors.green : AppColors.textSecondary),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (eval != null)
+                                        Text('${eval.teacherOverrideScore ?? eval.aiScore ?? 0}/${eval.maxScore ?? 0}', style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.w800)),
+                                      const SizedBox(width: 6),
+                                      const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(sub.submissionText, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                                if (eval != null && eval.reviewedByTeacher) ...[
-                                  const SizedBox(height: 8),
-                                  const Text('Reviewed', style: TextStyle(fontSize: 11, color: AppColors.green, fontWeight: FontWeight.w600)),
-                                ],
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton(onPressed: () => _openReview(sub), child: const Text('View & Review')),
-                                ),
-                              ],
+                              ),
                             ),
                           );
                         },
                       ),
+      ),
+    );
+  }
+}
+
+/// Full-page submission review: complete scrollable answer, then AI
+/// evaluation, then the teacher's own score + feedback.
+class SubmissionDetailReviewScreen extends StatefulWidget {
+  final AssignmentSubmissionModel submission;
+
+  const SubmissionDetailReviewScreen({super.key, required this.submission});
+
+  @override
+  State<SubmissionDetailReviewScreen> createState() => _SubmissionDetailReviewScreenState();
+}
+
+class _SubmissionDetailReviewScreenState extends State<SubmissionDetailReviewScreen> {
+  final AssignmentService _service = AssignmentService();
+  late final TextEditingController _scoreController;
+  late final TextEditingController _feedbackController;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final eval = widget.submission.evaluation;
+    _scoreController = TextEditingController(text: (eval?.teacherOverrideScore ?? eval?.aiScore)?.toString() ?? '');
+    _feedbackController = TextEditingController(text: eval?.teacherFeedback ?? '');
+  }
+
+  @override
+  void dispose() {
+    _scoreController.dispose();
+    _feedbackController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _service.reviewSubmission(
+        widget.submission.id,
+        overrideScore: int.tryParse(_scoreController.text),
+        feedback: _feedbackController.text.trim(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Review saved.')));
+        Navigator.pop(context, widget.submission);
+      }
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save review.')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sub = widget.submission;
+    final eval = sub.evaluation;
+
+    return Scaffold(
+      backgroundColor: AppColors.pageBackground,
+      appBar: AppBar(title: Text(sub.studentName)),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _card(
+            title: 'Submission',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (sub.submittedAt != null)
+                  Text('Submitted ${sub.submittedAt!.day}/${sub.submittedAt!.month}/${sub.submittedAt!.year} at ${sub.submittedAt!.hour.toString().padLeft(2, '0')}:${sub.submittedAt!.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                const SizedBox(height: 10),
+                const Text('Student Answer', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: AppColors.pageBackground, borderRadius: BorderRadius.circular(12)),
+                  child: SelectableText(sub.submissionText, style: const TextStyle(fontSize: 13, height: 1.5)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (eval != null)
+            _card(
+              title: '\u{1F916} AI Evaluation',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('AI Score: ${eval.aiScore ?? 0}/${eval.maxScore ?? 0}', style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.purple)),
+                  if (eval.strengths.isNotEmpty) ..._section('Strengths', eval.strengths, AppColors.green),
+                  if (eval.weaknesses.isNotEmpty) ..._section('Weaknesses', eval.weaknesses, AppColors.orange),
+                  if (eval.missingConcepts.isNotEmpty) ..._section('Missing Concepts', eval.missingConcepts, AppColors.error),
+                  if (eval.suggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('Suggestions: ${eval.suggestions}', style: const TextStyle(fontSize: 12)),
+                  ],
+                ],
+              ),
+            )
+          else
+            _card(title: '\u{1F916} AI Evaluation', child: const Text('Still evaluating...', style: TextStyle(color: AppColors.textSecondary, fontSize: 12))),
+          const SizedBox(height: 16),
+          _card(
+            title: 'Your Review',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _scoreController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: 'Final Score (out of ${eval?.maxScore ?? 10})', border: const OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _feedbackController,
+                  maxLines: 4,
+                  decoration: const InputDecoration(labelText: 'Feedback for student', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _save,
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.purple, minimumSize: const Size.fromHeight(48)),
+                    child: _saving
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Save Review'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _section(String title, List<String> items, Color color) {
+    return [
+      const SizedBox(height: 10),
+      Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: color)),
+      ...items.map((i) => Padding(padding: const EdgeInsets.only(top: 2), child: Text('\u2022 $i', style: const TextStyle(fontSize: 12)))),
+    ];
+  }
+
+  Widget _card({required String title, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20), boxShadow: AppTheme.softShadow),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          const SizedBox(height: 10),
+          child,
+        ],
       ),
     );
   }

@@ -30,6 +30,7 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware, r
 
 	// Any signed-in user can view an assignment's detail and submit to it.
 	group.GET("/:id", handler.GetByID)
+	group.GET("/for-student", handler.ListForStudent)
 	group.POST("/:id/draft", handler.SaveDraft)
 	group.POST("/:id/submit", handler.Submit)
 	group.GET("/:id/my-submission", handler.GetMySubmission)

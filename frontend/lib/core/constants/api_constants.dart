@@ -74,6 +74,13 @@ class ApiConstants {
   static String assignmentSubmit(int id) => '/assignments/$id/submit';
   static String mySubmission(int id) => '/assignments/$id/my-submission';
   static String retryEvaluation(int submissionId) => '/assignments/submissions/$submissionId/retry-evaluation';
+  static const String assignmentsForStudent = '/assignments/for-student';
+
+  // --- Notifications ---
+  static const String notifications = '/notifications';
+  static const String notificationsUnreadCount = '/notifications/unread-count';
+  static String notificationRead(int id) => '/notifications/$id/read';
+  static const String notificationsReadAll = '/notifications/read-all';
   static String subjectAssignments(int subjectId) => '/subjects/$subjectId/assignments';
   static const String adminAssignments = '/admin/assignments';
   static const String adminAssignmentAnalytics = '/admin/assignments/analytics';

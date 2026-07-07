@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/assignment_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/assignment_service.dart';
 
 /// Student's assignment detail: read instructions, write/save a draft,
@@ -116,6 +118,20 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final role = context.watch<AuthProvider>().currentUser?.role;
+    if (role != 'student') {
+      return Scaffold(
+        backgroundColor: AppColors.pageBackground,
+        appBar: AppBar(title: const Text('Assignment')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('This view is for students. Use "Review Submissions" to see student answers.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary)),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.pageBackground,
       appBar: AppBar(title: Text(_assignment?.title ?? 'Assignment')),
@@ -233,7 +249,8 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
       );
     }
 
-    final score = eval.teacherOverrideScore ?? eval.aiScore ?? 0;
+    final aiScore = eval.aiScore ?? 0;
+    final hasTeacherScore = eval.reviewedByTeacher && eval.teacherOverrideScore != null;
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,12 +259,18 @@ class _AssignmentDetailScreenState extends State<AssignmentDetailScreen> {
             children: [
               const Text('\u{1F916} AI Evaluation', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const Spacer(),
-              Text('$score/${eval.maxScore ?? 0}', style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.w800, fontSize: 16)),
+              Text('AI: $aiScore/${eval.maxScore ?? 0}', style: const TextStyle(color: AppColors.blue, fontWeight: FontWeight.w700, fontSize: 13)),
             ],
           ),
-          if (eval.reviewedByTeacher) ...[
+          if (hasTeacherScore) ...[
             const SizedBox(height: 6),
-            const Text('Reviewed by your teacher', style: TextStyle(fontSize: 11, color: AppColors.green, fontWeight: FontWeight.w600)),
+            Row(
+              children: [
+                const Icon(Icons.verified_rounded, size: 14, color: AppColors.green),
+                const SizedBox(width: 6),
+                Text('Teacher Score: ${eval.teacherOverrideScore}/${eval.maxScore ?? 0}', style: const TextStyle(color: AppColors.green, fontWeight: FontWeight.w800, fontSize: 14)),
+              ],
+            ),
           ],
           if (eval.strengths.isNotEmpty) ..._section('Strengths', eval.strengths, AppColors.green),
           if (eval.weaknesses.isNotEmpty) ..._section('Areas to improve', eval.weaknesses, AppColors.orange),

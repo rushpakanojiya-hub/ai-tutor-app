@@ -59,7 +59,9 @@ type Assignment struct {
 	StartDate        *time.Time `json:"start_date"`
 	DueDate          *time.Time `json:"due_date"`
 	Status           string     `json:"status"`
+	MyStatus         string     `json:"my_status,omitempty"` // student-facing only: "not_started" | submission status
 	SubmissionCount  int        `json:"submission_count,omitempty"`
+	MySubmissionStatus string   `json:"my_submission_status,omitempty"` // set only in student-facing lists
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }

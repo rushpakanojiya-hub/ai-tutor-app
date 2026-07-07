@@ -90,6 +90,14 @@ class AssignmentService {
     return data.map((json) => AssignmentModel.fromJson(json as Map<String, dynamic>)).toList();
   }
 
+  /// Every published assignment across every subject the student is
+  /// enrolled in - powers the Assignments tab and Home dashboard card.
+  Future<List<AssignmentModel>> fetchForStudent() async {
+    final response = await _api.get(ApiConstants.assignmentsForStudent);
+    final data = response['data'] as List<dynamic>? ?? [];
+    return data.map((json) => AssignmentModel.fromJson(json as Map<String, dynamic>)).toList();
+  }
+
   Future<void> saveDraft(int assignmentId, String text) async {
     await _api.post(ApiConstants.assignmentDraft(assignmentId), {'submission_text': text});
   }
