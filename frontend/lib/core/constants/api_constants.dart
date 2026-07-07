@@ -75,15 +75,29 @@ class ApiConstants {
   static String mySubmission(int id) => '/assignments/$id/my-submission';
   static String retryEvaluation(int submissionId) => '/assignments/submissions/$submissionId/retry-evaluation';
   static const String assignmentsForStudent = '/assignments/for-student';
-
-  // --- Notifications ---
-  static const String notifications = '/notifications';
-  static const String notificationsUnreadCount = '/notifications/unread-count';
-  static String notificationRead(int id) => '/notifications/$id/read';
-  static const String notificationsReadAll = '/notifications/read-all';
   static String subjectAssignments(int subjectId) => '/subjects/$subjectId/assignments';
   static const String adminAssignments = '/admin/assignments';
   static const String adminAssignmentAnalytics = '/admin/assignments/analytics';
+
+  // --- Live Classes (Phase 1: scheduling only, no video) ---
+  static const String liveClasses = '/live-classes';
+  static String liveClass(int id) => '/live-classes/$id';
+  static String liveClassCancel(int id) => '/live-classes/$id/cancel';
+  static String liveClassComplete(int id) => '/live-classes/$id/complete';
+  static const String myLiveClasses = '/live-classes/mine';
+  static const String liveClassesForStudent = '/live-classes/for-student';
+  static const String adminLiveClasses = '/admin/live-classes';
+  static String adminLiveClassCancel(int id) => '/admin/live-classes/$id/cancel';
+  static String liveClassCheckIn(int id) => '/live-classes/$id/check-in';
+  static String liveClassMyAttendance(int id) => '/live-classes/$id/my-attendance';
+  static String liveClassAttendance(int id) => '/live-classes/$id/attendance';
+  static const String liveClassAttendanceSummary = '/live-classes/attendance-summary';
+
+  // --- Notifications ---
+  static const String notifications = '/notifications';
+  static const String notificationUnreadCount = '/notifications/unread-count';
+  static String notificationRead(int id) => '/notifications/$id/read';
+  static const String notificationReadAll = '/notifications/read-all';
 
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 15);

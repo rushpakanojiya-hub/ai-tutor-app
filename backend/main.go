@@ -17,9 +17,11 @@ import (
 	"ai-tutor-backend/internal/auth"
 	"ai-tutor-backend/internal/categories"
 	"ai-tutor-backend/internal/enrollment"
+	"ai-tutor-backend/internal/liveclass"
 	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
+	"ai-tutor-backend/internal/notification"
 	"ai-tutor-backend/internal/progress"
 	"ai-tutor-backend/internal/quiz"
 	"ai-tutor-backend/internal/streak"
@@ -107,6 +109,16 @@ func main() {
 	assignmentService := assignment.NewService(assignmentRepo, subjectsRepo, groqClient, streakService)
 	assignmentHandler := assignment.NewHandler(assignmentService)
 
+	// --- Live Classes (Phase 1: scheduling/calendar only - no video SDK set up yet) ---
+	// --- Notifications: simple polling-based (no WebSocket infra yet) ---
+	notificationRepo := notification.NewRepository(db)
+	notificationService := notification.NewService(notificationRepo)
+	notificationHandler := notification.NewHandler(notificationService)
+
+	liveClassRepo := liveclass.NewRepository(db)
+	liveClassService := liveclass.NewService(liveClassRepo, notificationService)
+	liveClassHandler := liveclass.NewHandler(liveClassService)
+
 	recommendationsRepo := recommendations.NewRepository(db)
 	recommendationsService := recommendations.NewService(recommendationsRepo)
 	recommendationsHandler := recommendations.NewHandler(recommendationsService)
@@ -164,6 +176,9 @@ func main() {
 	assignment.RegisterRoutes(api, assignmentHandler, authMiddleware, middleware.RequireTeacher())
 	assignment.RegisterSubjectRoute(api, assignmentHandler, authMiddleware)
 	assignment.RegisterAdminRoutes(api, assignmentHandler, authMiddleware, middleware.RequireAdmin())
+	liveclass.RegisterRoutes(api, liveClassHandler, authMiddleware, middleware.RequireTeacher())
+	liveclass.RegisterAdminRoutes(api, liveClassHandler, authMiddleware, middleware.RequireAdmin())
+	notification.RegisterRoutes(api, notificationHandler, authMiddleware)
 
 	// Role-gated routes are still intentionally absent (see Day 1 notes) —
 	// when an admin dashboard exists, the POST endpoints above (create

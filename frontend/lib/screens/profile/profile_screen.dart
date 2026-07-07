@@ -80,6 +80,14 @@ class ProfileScreen extends StatelessWidget {
             label: 'AI Quiz Generator',
             onTap: () => context.push('/ai-quiz-generator'),
           ).animate().fadeIn(duration: 250.ms, delay: 145.ms),
+          if (auth.currentUser?.role == 'student') ...[
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.video_camera_front_rounded,
+              label: 'Live Classes',
+              onTap: () => context.push('/student-live-classes'),
+            ).animate().fadeIn(duration: 250.ms, delay: 147.ms),
+          ],
           if (auth.currentUser?.role == 'teacher') ...[
             const SizedBox(height: 12),
             _ProfileMenuTile(
@@ -87,6 +95,12 @@ class ProfileScreen extends StatelessWidget {
               label: 'My Assignments',
               onTap: () => context.push('/my-assignments'),
             ).animate().fadeIn(duration: 250.ms, delay: 148.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.video_camera_front_rounded,
+              label: 'My Live Classes',
+              onTap: () => context.push('/my-live-classes'),
+            ).animate().fadeIn(duration: 250.ms, delay: 149.ms),
           ],
           if (auth.currentUser?.role == 'admin') ...[
             const SizedBox(height: 12),

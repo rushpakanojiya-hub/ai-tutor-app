@@ -22,6 +22,11 @@ import '../../screens/assignments/my_assignments_screen.dart';
 import '../../screens/assignments/submission_review_screen.dart';
 import '../../screens/assignments/assignment_list_screen.dart';
 import '../../screens/assignments/assignment_detail_screen.dart';
+import '../../screens/liveclass/create_live_class_screen.dart';
+import '../../screens/liveclass/my_live_classes_screen.dart';
+import '../../screens/liveclass/student_live_classes_screen.dart';
+import '../../screens/liveclass/admin_live_classes_screen.dart';
+import '../../screens/notifications/notification_center_screen.dart';
 import '../../screens/search/search_screen.dart';
 import '../../screens/splash/splash_screen.dart';
 import '../../screens/subjects/subjects_screen.dart';
@@ -160,6 +165,26 @@ class AppRouter {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return AssignmentDetailScreen(assignmentId: extra['assignmentId'] as int);
         },
+      ),
+      GoRoute(
+        path: '/create-live-class',
+        builder: (context, state) => const CreateLiveClassScreen(),
+      ),
+      GoRoute(
+        path: '/my-live-classes',
+        builder: (context, state) => const MyLiveClassesScreen(),
+      ),
+      GoRoute(
+        path: '/student-live-classes',
+        builder: (context, state) => const StudentLiveClassesScreen(),
+      ),
+      GoRoute(
+        path: '/admin-live-classes',
+        builder: (context, state) => const AdminLiveClassesScreen(),
+      ),
+      GoRoute(
+        path: '/notifications',
+        builder: (context, state) => const NotificationCenterScreen(),
       ),
 
       // --- AI Tutor: single ChatGPT-style screen (chat + history drawer +

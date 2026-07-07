@@ -1,0 +1,237 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
+import '../../models/subject_model.dart';
+import '../../services/live_class_service.dart';
+import '../../services/subject_service.dart';
+
+/// Teacher schedules a class - date/time/subject/settings only. No
+/// "Start Class" here since there's no video backend yet.
+class CreateLiveClassScreen extends StatefulWidget {
+  const CreateLiveClassScreen({super.key});
+
+  @override
+  State<CreateLiveClassScreen> createState() => _CreateLiveClassScreenState();
+}
+
+class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
+  final LiveClassService _service = LiveClassService();
+  final SubjectService _subjectService = SubjectService();
+
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _maxStudentsController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  List<SubjectModel> _subjects = [];
+  int? _selectedSubjectId;
+  DateTime _date = DateTime.now().add(const Duration(days: 1));
+  TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 11, minute: 0);
+  bool _isPublic = true;
+  bool _recordClass = false;
+  bool _loadingSubjects = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSubjects();
+  }
+
+  Future<void> _loadSubjects() async {
+    try {
+      _subjects = await _subjectService.fetchAllSubjects();
+    } catch (_) {}
+    if (mounted) setState(() => _loadingSubjects = false);
+  }
+
+  String _fmtDate(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String _fmtTime(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _schedule() async {
+    if (_selectedSubjectId == null || _titleController.text.trim().isEmpty) {
+      setState(() => _error = 'Subject and title are required.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      await _service.create(
+        subjectId: _selectedSubjectId!,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        classDate: _fmtDate(_date),
+        startTime: _fmtTime(_startTime),
+        endTime: _fmtTime(_endTime),
+        maxStudents: int.tryParse(_maxStudentsController.text),
+        isPublic: _isPublic,
+        meetingPassword: _passwordController.text.trim(),
+        recordClass: _recordClass,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Class scheduled.')));
+        context.pop();
+      }
+    } catch (e) {
+      setState(() => _error = 'Failed to schedule class. Please try again.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _maxStudentsController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.pageBackground,
+      appBar: AppBar(title: const Text('Schedule Live Class')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _card(
+            title: 'Subject',
+            child: _loadingSubjects
+                ? const LinearProgressIndicator()
+                : DropdownButtonFormField<int?>(
+                    value: _selectedSubjectId,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Select a subject'),
+                    items: _subjects.map((s) => DropdownMenuItem<int?>(value: s.id, child: Text(s.name))).toList(),
+                    onChanged: (v) => setState(() => _selectedSubjectId = v),
+                  ),
+          ),
+          const SizedBox(height: 14),
+          _card(title: 'Title', child: TextField(controller: _titleController, decoration: const InputDecoration(border: OutlineInputBorder()))),
+          const SizedBox(height: 14),
+          _card(title: 'Description', child: TextField(controller: _descriptionController, maxLines: 3, decoration: const InputDecoration(border: OutlineInputBorder()))),
+          const SizedBox(height: 14),
+          _card(
+            title: 'Date',
+            child: Row(
+              children: [
+                Expanded(child: Text(_fmtDate(_date))),
+                TextButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                    if (picked != null) setState(() => _date = picked);
+                  },
+                  child: const Text('Pick date'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _card(
+                  title: 'Start Time',
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(_startTime.format(context))),
+                      TextButton(
+                        onPressed: () async {
+                          final picked = await showTimePicker(context: context, initialTime: _startTime);
+                          if (picked != null) setState(() => _startTime = picked);
+                        },
+                        child: const Text('Pick'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _card(
+                  title: 'End Time',
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(_endTime.format(context))),
+                      TextButton(
+                        onPressed: () async {
+                          final picked = await showTimePicker(context: context, initialTime: _endTime);
+                          if (picked != null) setState(() => _endTime = picked);
+                        },
+                        child: const Text('Pick'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _card(title: 'Max Students (optional)', child: TextField(controller: _maxStudentsController, keyboardType: TextInputType.number, decoration: const InputDecoration(border: OutlineInputBorder()))),
+          const SizedBox(height: 14),
+          _card(title: 'Meeting Password (optional)', child: TextField(controller: _passwordController, decoration: const InputDecoration(border: OutlineInputBorder()))),
+          const SizedBox(height: 14),
+          _card(
+            title: 'Settings',
+            child: Column(
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Public (visible to all students)', style: TextStyle(fontSize: 13)),
+                  value: _isPublic,
+                  onChanged: (v) => setState(() => _isPublic = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Record this class', style: TextStyle(fontSize: 13)),
+                  subtitle: const Text('Recording upload isn\'t available yet - this just notes your intent.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                  value: _recordClass,
+                  onChanged: (v) => setState(() => _recordClass = v),
+                ),
+              ],
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 14),
+            Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 13)),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _schedule,
+              style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50), backgroundColor: AppColors.purple),
+              child: _saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Schedule Class'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _card({required String title, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(18), boxShadow: AppTheme.softShadow),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}

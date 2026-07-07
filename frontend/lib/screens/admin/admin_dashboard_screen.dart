@@ -190,6 +190,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        Material(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => context.push('/admin-live-classes'),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: AppTheme.softShadow),
+              child: const Row(
+                children: [
+                  Icon(Icons.video_camera_front_rounded, color: AppColors.orange),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Live Classes Monitoring', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+                  Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                ],
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

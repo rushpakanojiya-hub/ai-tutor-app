@@ -10,6 +10,7 @@ import '../../models/subject_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/assignment_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/quiz_service.dart';
 import '../../services/streak_service.dart';
 import '../../services/subject_service.dart';
@@ -99,12 +100,14 @@ class _DashboardHomeState extends State<_DashboardHome> {
   final QuizService _quizService = QuizService();
   final StreakService _streakService = StreakService();
   final AssignmentService _assignmentService = AssignmentService();
+  final NotificationService _notificationService = NotificationService();
 
   List<SubjectModel> _subjects = [];
   int _totalAttempts = 0;
   double _accuracy = 0;
   StreakSummary? _streak;
   List<AssignmentModel> _pendingAssignments = [];
+  int _unreadNotifications = 0;
   bool _isLoading = true;
 
   @override
@@ -125,6 +128,9 @@ class _DashboardHomeState extends State<_DashboardHome> {
     } catch (_) {}
     try {
       _streak = await _streakService.fetchSummary();
+    } catch (_) {}
+    try {
+      _unreadNotifications = await _notificationService.fetchUnreadCount();
     } catch (_) {}
     if (context.read<AuthProvider>().currentUser?.role == 'student') {
       try {
@@ -208,6 +214,39 @@ class _DashboardHomeState extends State<_DashboardHome> {
           ),
         ),
         const SizedBox(width: 12),
+        Material(
+          color: AppColors.card,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () async {
+              await context.push('/notifications');
+              _load();
+            },
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: AppTheme.softShadow),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
+                  if (_unreadNotifications > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
         Container(
           width: 52,
           height: 52,
