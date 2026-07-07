@@ -44,7 +44,16 @@ class _LessonsScreenState extends State<LessonsScreen> {
     final provider = context.watch<LessonProvider>();
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.subjectName)),
+      appBar: AppBar(
+        title: Text(widget.subjectName),
+        actions: [
+          IconButton(
+            tooltip: 'Assignments',
+            icon: const Icon(Icons.assignment_rounded),
+            onPressed: () => context.push('/subject-assignments', extra: {'subjectId': widget.subjectId, 'subjectName': widget.subjectName}),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () => provider.loadLessons(widget.subjectId),
         child: Padding(

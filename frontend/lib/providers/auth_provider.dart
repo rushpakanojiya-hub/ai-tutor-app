@@ -44,6 +44,32 @@ class AuthProvider extends ChangeNotifier {
     });
   }
 
+  /// Submits a teacher application - the account starts "pending" and
+  /// can't log in until an admin approves it.
+  Future<bool> applyAsTeacher({
+    required String name,
+    required String email,
+    required String password,
+    String phone = '',
+    String qualification = '',
+    String experience = '',
+    String subjects = '',
+    String bio = '',
+  }) async {
+    return _runGuarded(() async {
+      await _authService.applyAsTeacher(
+        name: name,
+        email: email,
+        password: password,
+        phone: phone,
+        qualification: qualification,
+        experience: experience,
+        subjects: subjects,
+        bio: bio,
+      );
+    });
+  }
+
   Future<bool> login({required String email, required String password}) async {
     return _runGuarded(() async {
       final result = await _authService.login(email: email, password: password);

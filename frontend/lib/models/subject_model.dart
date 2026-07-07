@@ -15,6 +15,7 @@ class SubjectModel {
   final int notesCount;
   final int quizCount;
   final double learningHours;
+  final double completedHours;
   final double progressPercentage;
 
   SubjectModel({
@@ -29,6 +30,7 @@ class SubjectModel {
     required this.notesCount,
     required this.quizCount,
     required this.learningHours,
+    required this.completedHours,
     required this.progressPercentage,
   });
 
@@ -45,6 +47,7 @@ class SubjectModel {
       notesCount: json['notes_count'] as int? ?? 0,
       quizCount: json['quiz_count'] as int? ?? 0,
       learningHours: (json['learning_hours'] as num?)?.toDouble() ?? 0.0,
+      completedHours: (json['completed_hours'] as num?)?.toDouble() ?? 0.0,
       progressPercentage: (json['progress_percentage'] as num?)?.toDouble() ?? 0.0,
     );
   }

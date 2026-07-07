@@ -7,10 +7,11 @@ class ApiConstants {
   /// - Physical device / real backend: replace with your machine's LAN IP
   ///   or your deployed Render URL, e.g. https://your-app.onrender.com
   /// - iOS simulator: use http://localhost:8080
-  static const String baseUrl = 'http://192.168.1.14:8080/api';
+  static const String baseUrl = 'http://192.168.1.31:8080/api';
 
   // --- Day 1: Auth ---
   static const String register = '/auth/register';
+  static const String teacherApply = '/auth/teacher/apply';
   static const String login = '/auth/login';
   static const String profile = '/auth/profile';
 
@@ -50,6 +51,32 @@ class ApiConstants {
 
   // --- Learning Streak ---
   static const String streak = '/streak';
+
+  // --- Admin Panel ---
+  static const String adminDashboard = '/admin/dashboard';
+  static const String adminPendingTeachers = '/auth/admin/teachers/pending';
+  static String adminApproveTeacher(int id) => '/auth/admin/teachers/$id/approve';
+  static String adminRejectTeacher(int id) => '/auth/admin/teachers/$id/reject';
+
+  // --- Assignments ---
+  static const String assignments = '/assignments';
+  static String assignment(int id) => '/assignments/$id';
+  static String assignmentPublish(int id) => '/assignments/$id/publish';
+  static String assignmentUnpublish(int id) => '/assignments/$id/unpublish';
+  static String assignmentClose(int id) => '/assignments/$id/close';
+  static String assignmentArchive(int id) => '/assignments/$id/archive';
+  static const String assignmentGenerateAI = '/assignments/generate-ai';
+  static const String myAssignments = '/assignments/mine';
+  static const String teacherAssignmentAnalytics = '/assignments/analytics';
+  static String assignmentSubmissions(int id) => '/assignments/$id/submissions';
+  static String reviewSubmission(int id) => '/assignments/submissions/$id/review';
+  static String assignmentDraft(int id) => '/assignments/$id/draft';
+  static String assignmentSubmit(int id) => '/assignments/$id/submit';
+  static String mySubmission(int id) => '/assignments/$id/my-submission';
+  static String retryEvaluation(int submissionId) => '/assignments/submissions/$submissionId/retry-evaluation';
+  static String subjectAssignments(int subjectId) => '/subjects/$subjectId/assignments';
+  static const String adminAssignments = '/admin/assignments';
+  static const String adminAssignmentAnalytics = '/admin/assignments/analytics';
 
   static const Duration connectTimeout = Duration(seconds: 15);
   static const Duration receiveTimeout = Duration(seconds: 15);

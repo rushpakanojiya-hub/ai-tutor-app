@@ -27,6 +27,31 @@ class AuthService {
     });
   }
 
+  /// Submits a teacher application. The account is created as "pending" -
+  /// it cannot log in until an admin approves it (no file upload yet for
+  /// resume/certificate - that needs a file storage service first).
+  Future<void> applyAsTeacher({
+    required String name,
+    required String email,
+    required String password,
+    String phone = '',
+    String qualification = '',
+    String experience = '',
+    String subjects = '',
+    String bio = '',
+  }) async {
+    await _api.post(ApiConstants.teacherApply, {
+      'name': name,
+      'email': email,
+      'password': password,
+      'phone': phone,
+      'qualification': qualification,
+      'experience': experience,
+      'subjects': subjects,
+      'bio': bio,
+    });
+  }
+
   Future<LoginResult> login({
     required String email,
     required String password,

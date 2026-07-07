@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../screens/ai/ai_tutor_screen.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/register_screen.dart';
+import '../../screens/auth/teacher_apply_screen.dart';
 import '../../screens/categories/categories_screen.dart';
 import '../../screens/dashboard/dashboard_screen.dart';
 import '../../screens/lessons/lesson_player_screen.dart';
@@ -12,7 +13,15 @@ import '../../screens/lessons/lessons_screen.dart';
 import '../../screens/lessons/pdf_viewer_screen.dart';
 import '../../screens/lessons/quiz_screen.dart';
 import '../../screens/quiz/ai_quiz_generator_screen.dart';
-import '../../screens/quiz/quiz_analytics_screen.dart';
+import '../../screens/quiz/progress_dashboard_screen.dart';
+import '../../screens/admin/admin_dashboard_screen.dart';
+import '../../screens/admin/teacher_applications_screen.dart';
+import '../../screens/admin/admin_assignments_screen.dart';
+import '../../screens/assignments/create_assignment_screen.dart';
+import '../../screens/assignments/my_assignments_screen.dart';
+import '../../screens/assignments/submission_review_screen.dart';
+import '../../screens/assignments/assignment_list_screen.dart';
+import '../../screens/assignments/assignment_detail_screen.dart';
 import '../../screens/search/search_screen.dart';
 import '../../screens/splash/splash_screen.dart';
 import '../../screens/subjects/subjects_screen.dart';
@@ -35,6 +44,7 @@ class AppRouter {
       GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
+      GoRoute(path: '/teacher-apply', builder: (context, state) => const TeacherApplyScreen()),
       GoRoute(path: '/dashboard', builder: (context, state) => const DashboardScreen()),
 
       // --- Day 2: Course & Learning Management ---
@@ -102,7 +112,54 @@ class AppRouter {
       ),
       GoRoute(
         path: '/quiz-analytics',
-        builder: (context, state) => const QuizAnalyticsScreen(),
+        builder: (context, state) => const ProgressDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/admin-dashboard',
+        builder: (context, state) => const AdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/admin-teacher-applications',
+        builder: (context, state) => const TeacherApplicationsScreen(),
+      ),
+      GoRoute(
+        path: '/admin-assignments',
+        builder: (context, state) => const AdminAssignmentsScreen(),
+      ),
+      GoRoute(
+        path: '/create-assignment',
+        builder: (context, state) => const CreateAssignmentScreen(),
+      ),
+      GoRoute(
+        path: '/my-assignments',
+        builder: (context, state) => const MyAssignmentsScreen(),
+      ),
+      GoRoute(
+        path: '/assignment-submissions',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return SubmissionReviewScreen(
+            assignmentId: extra['assignmentId'] as int,
+            title: extra['title'] as String? ?? 'Assignment',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/subject-assignments',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return AssignmentListScreen(
+            subjectId: extra['subjectId'] as int,
+            subjectName: extra['subjectName'] as String? ?? 'Subject',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/assignment-detail',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return AssignmentDetailScreen(assignmentId: extra['assignmentId'] as int);
+        },
       ),
 
       // --- AI Tutor: single ChatGPT-style screen (chat + history drawer +
@@ -111,7 +168,9 @@ class AppRouter {
     ],
     redirect: (context, state) {
       final status = authProvider.status;
-      final loggingIn = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+      final loggingIn = state.matchedLocation == '/login' ||
+          state.matchedLocation == '/register' ||
+          state.matchedLocation == '/teacher-apply';
       final onSplash = state.matchedLocation == '/';
 
       if (status == AuthStatus.unknown) {

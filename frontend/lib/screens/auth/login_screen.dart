@@ -116,6 +116,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                Center(
+                  child: GestureDetector(
+                    onTap: () => context.push('/teacher-apply'),
+                    child: const Text(
+                      'Become a Teacher',
+                      style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

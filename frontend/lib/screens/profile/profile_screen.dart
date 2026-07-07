@@ -80,6 +80,22 @@ class ProfileScreen extends StatelessWidget {
             label: 'AI Quiz Generator',
             onTap: () => context.push('/ai-quiz-generator'),
           ).animate().fadeIn(duration: 250.ms, delay: 145.ms),
+          if (auth.currentUser?.role == 'teacher') ...[
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.assignment_rounded,
+              label: 'My Assignments',
+              onTap: () => context.push('/my-assignments'),
+            ).animate().fadeIn(duration: 250.ms, delay: 148.ms),
+          ],
+          if (auth.currentUser?.role == 'admin') ...[
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.admin_panel_settings_rounded,
+              label: 'Admin Panel',
+              onTap: () => context.push('/admin-dashboard'),
+            ).animate().fadeIn(duration: 250.ms, delay: 150.ms),
+          ],
           const SizedBox(height: 12),
           _ProfileMenuTile(
             icon: Icons.logout_rounded,

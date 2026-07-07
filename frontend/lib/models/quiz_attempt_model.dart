@@ -221,29 +221,63 @@ class SubjectAccuracyModel {
   }
 }
 
+/// One day's quiz accuracy - used for the weekly performance trend chart.
+class DayAccuracyModel {
+  final String date;
+  final double accuracy;
+  final int attempts;
+
+  DayAccuracyModel({required this.date, required this.accuracy, required this.attempts});
+
+  factory DayAccuracyModel.fromJson(Map<String, dynamic> json) {
+    return DayAccuracyModel(
+      date: json['date'] as String? ?? '',
+      accuracy: (json['accuracy'] as num?)?.toDouble() ?? 0.0,
+      attempts: json['attempts'] as int? ?? 0,
+    );
+  }
+}
+
 /// Quiz performance analytics, computed server-side from real attempts.
 class QuizAnalyticsModel {
   final int totalAttempts;
   final double overallAccuracy;
+  final int passedCount;
+  final int failedCount;
+  final double averageScore;
+  final int highestScore;
   final List<SubjectAccuracyModel> bySubject;
   final List<SubjectAccuracyModel> weakTopics;
+  final List<DayAccuracyModel> weeklyTrend;
 
   QuizAnalyticsModel({
     required this.totalAttempts,
     required this.overallAccuracy,
+    required this.passedCount,
+    required this.failedCount,
+    required this.averageScore,
+    required this.highestScore,
     required this.bySubject,
     required this.weakTopics,
+    required this.weeklyTrend,
   });
 
   factory QuizAnalyticsModel.fromJson(Map<String, dynamic> json) {
     return QuizAnalyticsModel(
       totalAttempts: json['total_attempts'] as int? ?? 0,
       overallAccuracy: (json['overall_accuracy'] as num?)?.toDouble() ?? 0.0,
+      passedCount: json['passed_count'] as int? ?? 0,
+      failedCount: json['failed_count'] as int? ?? 0,
+      averageScore: (json['average_score'] as num?)?.toDouble() ?? 0.0,
+      highestScore: json['highest_score'] as int? ?? 0,
       bySubject: (json['by_subject'] as List<dynamic>? ?? [])
           .map((e) => SubjectAccuracyModel.fromJson(e as Map<String, dynamic>))
           .toList(),
       weakTopics: (json['weak_topics'] as List<dynamic>? ?? [])
           .map((e) => SubjectAccuracyModel.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      weeklyTrend: (json['weekly_trend'] as List<dynamic>? ?? [])
+          .map((e) => DayAccuracyModel.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
