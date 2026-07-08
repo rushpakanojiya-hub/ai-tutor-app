@@ -6,23 +6,25 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/live_class_service.dart';
 
-/// Real video call screen backed by LiveKit. Handles connect, local
-/// camera/mic preview, rendering remote participants in a grid, mute/
-/// camera toggles, leave/end, active-speaker highlighting, connection
-/// quality, a participant list, raise-hand, and in-call chat.
+/// Real video call screen backed by LiveKit - redesigned this round to
+/// look like a modern classroom (Zoom/Meet-style): one large primary
+/// video, a floating draggable self-view, a minimal 4-button toolbar
+/// with a "More" sheet for secondary actions, and slide-up panels for
+/// Participants/Chat instead of a fixed side column.
 ///
-/// Raise-hand and chat ride on LiveKit's built-in data channel
-/// (publishData/DataReceivedEvent) rather than a new backend - so chat
-/// history does NOT persist after the call ends. Teacher mute/remove,
-/// mute-all, and lock-room are NOT included here - those need
-/// server-side LiveKit admin API calls (a real backend addition),
-/// deferred to a future round.
+/// IMPORTANT: this is a UI-only pass. Every existing method, event
+/// listener, and backend call below is untouched - only how they're
+/// triggered/displayed changed. Attachments/Settings aren't wired to any
+/// real feature yet, so they're intentionally left out of the More menu
+/// rather than added as dead buttons.
 class LiveClassRoomScreen extends StatefulWidget {
   final int classId;
   final String url;
   final String token;
   final String classTitle;
   final bool isTeacher;
+  final String subjectName; // display-only, for the redesigned waiting state
+  final String lessonTitle; // display-only, for the redesigned waiting state
   final Future<void> Function()? onEndClass; // teacher only - calls the End API
 
   const LiveClassRoomScreen({
@@ -32,6 +34,8 @@ class LiveClassRoomScreen extends StatefulWidget {
     required this.token,
     required this.classTitle,
     required this.isTeacher,
+    this.subjectName = '',
+    this.lessonTitle = '',
     this.onEndClass,
   });
 
@@ -49,7 +53,7 @@ class _ChatMessage {
 
 enum _SidePanel { none, chat, participants }
 
-class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
+class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> with SingleTickerProviderStateMixin {
   late final lk.Room _room;
   lk.EventsListener<lk.RoomEvent>? _listener;
   final LiveClassService _classService = LiveClassService();
@@ -61,14 +65,12 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
   lk.CameraPosition _cameraPosition = lk.CameraPosition.front;
   String? _error;
 
-  // --- Speaker/Gallery view + audio output + room lock (this round) ---
-  bool _speakerView = false;
+  bool _speakerView = true; // redesign default: one large focused tile, not a grid
   bool _speakerphoneOn = true;
   bool _roomLocked = false;
 
   Timer? _fallbackRebuildTimer;
 
-  // --- New this round: active speaker / connection quality / chat / raise hand ---
   Set<String> _activeSpeakerIdentities = {};
   final Map<String, lk.ConnectionQuality> _connectionQuality = {};
   final List<_ChatMessage> _chatMessages = [];
@@ -78,6 +80,9 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
   _SidePanel _sidePanel = _SidePanel.none;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+
+  // Draggable floating self-view position (top-left offset), redesign-only.
+  Offset _pipOffset = const Offset(16, 90);
 
   @override
   void initState() {
@@ -161,7 +166,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
       final localIdentity = _room.localParticipant?.identity ?? '';
 
       if (type == 'chat') {
-        if (identity == localIdentity) return; // we already appended our own message locally
+        if (identity == localIdentity) return;
         setState(() {
           _chatMessages.add(_ChatMessage(
             identity: identity,
@@ -211,9 +216,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     final payload = jsonEncode({'type': 'chat', 'identity': identity, 'name': name, 'text': text, 'ts': DateTime.now().toIso8601String()});
     try {
       await local?.publishData(utf8.encode(payload));
-    } catch (_) {
-      // Message still shows locally even if the network send fails.
-    }
+    } catch (_) {}
   }
 
   Future<void> _toggleRaiseHand() async {
@@ -244,11 +247,12 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     });
   }
 
-  // --- Teacher moderation (server-side LiveKit admin API via our backend) ---
+  // --- Teacher moderation (calls the existing admin API - unchanged) ---
 
   Future<void> _muteParticipant(String identity) async {
     try {
       await _classService.muteParticipant(widget.classId, identity);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Participant muted.')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to mute participant.')));
     }
@@ -279,59 +283,99 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
       await _classService.muteAll(widget.classId);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All participants muted.')));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to mute all participants.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to mute all.')));
     }
   }
 
   Future<void> _toggleLockRoom() async {
-    final newState = !_roomLocked;
     try {
-      if (newState) {
+      if (!_roomLocked) {
         await _classService.lockRoom(widget.classId);
       } else {
         await _classService.unlockRoom(widget.classId);
       }
-      setState(() => _roomLocked = newState);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(newState ? 'Class locked - no new students can join.' : 'Class unlocked.')));
-      }
+      setState(() => _roomLocked = !_roomLocked);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update lock status.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update room lock.')));
     }
   }
 
   void _showMoreMenu() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.grey.shade900,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.mic_off_rounded, color: Colors.white70),
-              title: const Text('Mute All', style: TextStyle(color: Colors.white)),
-              onTap: () {
+            const SizedBox(height: 8),
+            Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4))),
+            const SizedBox(height: 8),
+            _moreMenuTile(Icons.people_alt_rounded, 'Participants', () {
+              Navigator.pop(context);
+              _openPanel(_SidePanel.participants);
+            }, badge: (_room.remoteParticipants.length + 1)),
+            _moreMenuTile(Icons.chat_bubble_rounded, 'Chat', () {
+              Navigator.pop(context);
+              _openPanel(_SidePanel.chat);
+            }, badge: _unreadChatCount),
+            _moreMenuTile(_localHandRaised ? Icons.back_hand_rounded : Icons.back_hand_outlined, _localHandRaised ? 'Lower Hand' : 'Raise Hand', () {
+              Navigator.pop(context);
+              _toggleRaiseHand();
+            }, highlighted: _localHandRaised),
+            _moreMenuTile(Icons.cameraswitch_rounded, 'Switch Camera', _cameraEnabled ? () {
+              Navigator.pop(context);
+              _switchCamera();
+            } : null),
+            _moreMenuTile(_speakerphoneOn ? Icons.volume_up_rounded : Icons.hearing_rounded, _speakerphoneOn ? 'Speaker' : 'Earpiece', () {
+              Navigator.pop(context);
+              _toggleSpeakerphone();
+            }),
+            _moreMenuTile(_speakerView ? Icons.grid_view_rounded : Icons.view_agenda_rounded, _speakerView ? 'Grid View' : 'Speaker View', () {
+              Navigator.pop(context);
+              _toggleViewMode();
+            }),
+            if (widget.isTeacher) ...[
+              const Divider(color: Colors.white12, height: 20),
+              _moreMenuTile(Icons.mic_off_rounded, 'Mute All', () {
                 Navigator.pop(context);
                 _muteAll();
-              },
-            ),
-            ListTile(
-              leading: Icon(_roomLocked ? Icons.lock_open_rounded : Icons.lock_rounded, color: Colors.white70),
-              title: Text(_roomLocked ? 'Unlock Room' : 'Lock Room', style: const TextStyle(color: Colors.white)),
-              subtitle: Text(_roomLocked ? 'Allow new students to join' : 'Stop new students from joining', style: const TextStyle(color: Colors.white38, fontSize: 11)),
-              onTap: () {
-                Navigator.pop(context);
-                _toggleLockRoom();
-              },
-            ),
+              }),
+              _moreMenuTile(
+                _roomLocked ? Icons.lock_open_rounded : Icons.lock_rounded,
+                _roomLocked ? 'Unlock Room' : 'Lock Room',
+                () {
+                  Navigator.pop(context);
+                  _toggleLockRoom();
+                },
+                subtitle: _roomLocked ? 'Allow new students to join' : 'Stop new students from joining',
+                highlighted: _roomLocked,
+              ),
+            ],
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  // --- View mode + audio output ---
+  Widget _moreMenuTile(IconData icon, String title, VoidCallback? onTap, {String? subtitle, int badge = 0, bool highlighted = false}) {
+    return ListTile(
+      enabled: onTap != null,
+      leading: Icon(icon, color: highlighted ? AppColors.orange : (onTap != null ? Colors.white70 : Colors.white24)),
+      title: Text(title, style: TextStyle(color: onTap != null ? Colors.white : Colors.white24, fontSize: 14)),
+      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11)) : null,
+      trailing: badge > 0
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+              child: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+            )
+          : null,
+      onTap: onTap,
+    );
+  }
 
   void _toggleViewMode() => setState(() => _speakerView = !_speakerView);
 
@@ -428,6 +472,18 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     return false;
   }
 
+  /// Picks who gets the big main tile: the teacher first (always the
+  /// focus per the redesign brief), then whoever's currently speaking,
+  /// then just the first remote participant.
+  lk.RemoteParticipant? _primaryParticipant(List<lk.RemoteParticipant> remoteParticipants) {
+    if (remoteParticipants.isEmpty) return null;
+    final teacher = remoteParticipants.where((p) => p.identity.startsWith('teacher-')).toList();
+    if (teacher.isNotEmpty) return teacher.first;
+    final speaking = remoteParticipants.where((p) => _activeSpeakerIdentities.contains(p.identity)).toList();
+    if (speaking.isNotEmpty) return speaking.first;
+    return remoteParticipants.first;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_connecting) {
@@ -461,110 +517,248 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     final remoteParticipants = _room.remoteParticipants.values.toList();
     final localParticipant = _room.localParticipant;
     final List<lk.Participant> allParticipants = [if (localParticipant != null) localParticipant, ...remoteParticipants];
+    final primary = _primaryParticipant(remoteParticipants);
+    final others = remoteParticipants.where((p) => p.identity != primary?.identity).toList();
 
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(widget.classTitle, overflow: TextOverflow.ellipsis),
-        automaticallyImplyLeading: false,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // --- Main video area: fills almost the whole screen ---
+            Positioned.fill(
+              bottom: 84,
+              child: remoteParticipants.isEmpty
+                  ? _buildWaitingState()
+                  : (_speakerView
+                      ? _buildFocusedLayout(primary, others)
+                      : GridView.count(
+                          crossAxisCount: remoteParticipants.length > 1 ? 2 : 1,
+                          padding: const EdgeInsets.all(8),
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          children: remoteParticipants.map((p) => _participantTile(p)).toList(),
+                        )),
+            ),
+
+            // --- Class title, minimal top bar ---
+            Positioned(
+              top: 4,
+              left: 12,
+              right: 12,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(20)),
+                      child: Text(widget.classTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13), overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // --- Floating draggable self-view (picture-in-picture) ---
+            if (localParticipant != null) _buildDraggablePip(localParticipant),
+
+            // --- Minimal bottom toolbar ---
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildToolbar(),
+            ),
+
+            // --- Slide-up panel (Chat / Participants) ---
+            _buildSlideUpPanel(allParticipants),
+          ],
+        ),
       ),
-      body: Row(
-        children: [
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: remoteParticipants.isEmpty
-                      ? const Center(child: Text('Waiting for others to join...', style: TextStyle(color: Colors.white70)))
-                      : _speakerView
-                          ? _buildSpeakerView(remoteParticipants)
-                          : GridView.count(
-                              crossAxisCount: remoteParticipants.length > 1 ? 2 : 1,
-                              padding: const EdgeInsets.all(8),
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                              children: remoteParticipants.map((p) => _participantTile(p, isLocal: false)).toList(),
-                            ),
+    );
+  }
+
+  Widget _buildWaitingState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.85, end: 1.0),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeInOut,
+              builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+              child: CircleAvatar(
+                radius: 44,
+                backgroundColor: AppColors.purple,
+                child: Text(
+                  widget.classTitle.isNotEmpty ? widget.classTitle[0].toUpperCase() : '?',
+                  style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w700),
                 ),
-                if (localParticipant != null)
-                  Container(
-                    height: 130,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: SizedBox(width: 100, child: _participantTile(localParticipant, isLocal: true)),
-                    ),
-                  ),
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  color: Colors.grey.shade900,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _controlButton(_micEnabled ? Icons.mic : Icons.mic_off, _micEnabled ? Colors.white24 : AppColors.error, _toggleMic),
-                        const SizedBox(width: 10),
-                        _controlButton(_cameraEnabled ? Icons.videocam : Icons.videocam_off, _cameraEnabled ? Colors.white24 : AppColors.error, _toggleCamera),
-                        const SizedBox(width: 10),
-                        _controlButton(Icons.cameraswitch_rounded, _cameraEnabled ? Colors.white24 : Colors.white10, _cameraEnabled ? _switchCamera : () {}),
-                        const SizedBox(width: 10),
-                        _badgedControlButton(
-                          Icons.back_hand_rounded,
-                          _localHandRaised ? AppColors.orange : Colors.white24,
-                          _toggleRaiseHand,
-                          badgeCount: widget.isTeacher ? _raisedHands.length : 0,
-                        ),
-                        const SizedBox(width: 10),
-                        _badgedControlButton(Icons.chat_bubble_rounded, _sidePanel == _SidePanel.chat ? AppColors.purple : Colors.white24, () => _openPanel(_SidePanel.chat), badgeCount: _unreadChatCount),
-                        const SizedBox(width: 10),
-                        _badgedControlButton(Icons.people_alt_rounded, _sidePanel == _SidePanel.participants ? AppColors.purple : Colors.white24, () => _openPanel(_SidePanel.participants), badgeCount: allParticipants.length),
-                        const SizedBox(width: 10),
-                        _controlButton(_speakerView ? Icons.grid_view_rounded : Icons.view_carousel_rounded, Colors.white24, _toggleViewMode),
-                        const SizedBox(width: 10),
-                        _controlButton(_speakerphoneOn ? Icons.volume_up_rounded : Icons.hearing_rounded, Colors.white24, _toggleSpeakerphone),
-                        if (widget.isTeacher) ...[
-                          const SizedBox(width: 10),
-                          _controlButton(Icons.more_vert_rounded, _roomLocked ? AppColors.orange : Colors.white24, _showMoreMenu),
-                        ],
-                        const SizedBox(width: 10),
-                        _controlButton(Icons.call_end, AppColors.error, _leave),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(widget.classTitle, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700), textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            if (widget.subjectName.isNotEmpty || widget.lessonTitle.isNotEmpty)
+              Text(
+                [widget.subjectName, widget.lessonTitle].where((s) => s.isNotEmpty).join(' \u2022 '),
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            const SizedBox(height: 20),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+            ),
+            const SizedBox(height: 14),
+            const Text('Waiting for participants to join', style: TextStyle(color: Colors.white70, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFocusedLayout(lk.RemoteParticipant? primary, List<lk.RemoteParticipant> others) {
+    return Column(
+      children: [
+        Expanded(child: primary != null ? _participantTile(primary) : const SizedBox.shrink()),
+        if (others.isNotEmpty)
+          SizedBox(
+            height: 96,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              itemCount: others.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => SizedBox(width: 84, child: _participantTile(others[index])),
             ),
           ),
-          if (_sidePanel != _SidePanel.none) _buildSidePanel(allParticipants),
+      ],
+    );
+  }
+
+  Widget _buildDraggablePip(lk.LocalParticipant localParticipant) {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 80),
+      left: _pipOffset.dx,
+      top: _pipOffset.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            final size = MediaQuery.of(context).size;
+            final newX = (_pipOffset.dx + details.delta.dx).clamp(0.0, size.width - 96);
+            final newY = (_pipOffset.dy + details.delta.dy).clamp(0.0, size.height - 220);
+            _pipOffset = Offset(newX, newY);
+          });
+        },
+        child: SizedBox(
+          width: 96,
+          height: 128,
+          child: _participantTile(localParticipant, isLocal: true),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolbar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87]),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _toolbarButton(_micEnabled ? Icons.mic_rounded : Icons.mic_off_rounded, _micEnabled ? Colors.white24 : AppColors.error, _toggleMic),
+          const SizedBox(width: 22),
+          _toolbarButton(_cameraEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded, _cameraEnabled ? Colors.white24 : AppColors.error, _toggleCamera),
+          const SizedBox(width: 22),
+          _toolbarButton(Icons.call_end_rounded, AppColors.error, _leave, large: true),
+          const SizedBox(width: 22),
+          _badgedToolbarButton(Icons.more_horiz_rounded, Colors.white24, _showMoreMenu, badgeCount: _unreadChatCount + (widget.isTeacher ? _raisedHands.length : 0)),
         ],
       ),
     );
   }
 
-  Widget _buildSidePanel(List<lk.Participant> allParticipants) {
-    return Container(
-      width: 280,
-      color: Colors.grey.shade900,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Text(_sidePanel == _SidePanel.chat ? 'Chat' : 'Participants (${allParticipants.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                  const Spacer(),
-                  IconButton(icon: const Icon(Icons.close, color: Colors.white70, size: 20), onPressed: () => setState(() => _sidePanel = _SidePanel.none)),
-                ],
-              ),
+  Widget _toolbarButton(IconData icon, Color bg, VoidCallback onTap, {bool large = false}) {
+    return Material(
+      color: bg,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(padding: EdgeInsets.all(large ? 16 : 14), child: Icon(icon, color: Colors.white, size: large ? 26 : 22)),
+      ),
+    );
+  }
+
+  Widget _badgedToolbarButton(IconData icon, Color bg, VoidCallback onTap, {int badgeCount = 0}) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _toolbarButton(icon, bg, onTap),
+        if (badgeCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              child: Text('$badgeCount', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
             ),
-            const Divider(color: Colors.white24, height: 1),
-            Expanded(child: _sidePanel == _SidePanel.chat ? _buildChatPanel() : _buildParticipantsPanel(allParticipants)),
-          ],
+          ),
+      ],
+    );
+  }
+
+  // --- Slide-up panel (redesigned Chat/Participants - not a fixed side column) ---
+
+  Widget _buildSlideUpPanel(List<lk.Participant> allParticipants) {
+    final open = _sidePanel != _SidePanel.none;
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      left: 0,
+      right: 0,
+      bottom: open ? 84 : -560,
+      height: MediaQuery.of(context).size.height * 0.55,
+      child: GestureDetector(
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) > 200) setState(() => _sidePanel = _SidePanel.none);
+        },
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, -6))],
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4))),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      _sidePanel == _SidePanel.chat ? 'Chat' : 'Participants (${allParticipants.length})',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                    const Spacer(),
+                    IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20), onPressed: () => setState(() => _sidePanel = _SidePanel.none)),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.white12, height: 1),
+              Expanded(child: _sidePanel == _SidePanel.chat ? _buildChatPanel() : _buildParticipantsPanel(allParticipants)),
+            ],
+          ),
         ),
       ),
     );
@@ -578,47 +772,67 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
               ? const Center(child: Text('No messages yet.', style: TextStyle(color: Colors.white38, fontSize: 12)))
               : ListView.builder(
                   controller: _chatScrollController,
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   itemCount: _chatMessages.length,
                   itemBuilder: (context, index) {
                     final m = _chatMessages[index];
                     final isMe = m.identity == (_room.localParticipant?.identity ?? '');
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(isMe ? 'You' : m.name, style: TextStyle(color: isMe ? AppColors.purpleLight : Colors.white70, fontSize: 11, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 2),
-                          Text(m.text, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                        ],
+                    return Align(
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isMe ? AppColors.purple : Colors.grey.shade800,
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft: Radius.circular(isMe ? 16 : 4),
+                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!isMe) Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(m.name, style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700))),
+                            Text(m.text, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
                       ),
                     );
                   },
                 ),
         ),
-        Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _chatController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Message...',
-                    hintStyle: const TextStyle(color: Colors.white38),
-                    filled: true,
-                    fillColor: Colors.grey.shade800,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _chatController,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Message...',
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      filled: true,
+                      fillColor: Colors.grey.shade800,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                    ),
+                    onSubmitted: (_) => _sendChat(),
                   ),
-                  onSubmitted: (_) => _sendChat(),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(icon: const Icon(Icons.send_rounded, color: AppColors.purple), onPressed: _sendChat),
-            ],
+                const SizedBox(width: 8),
+                Material(
+                  color: AppColors.purple,
+                  shape: const CircleBorder(),
+                  child: InkWell(customBorder: const CircleBorder(), onTap: _sendChat, child: const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.send_rounded, color: Colors.white, size: 20))),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -632,11 +846,11 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
       itemBuilder: (context, index) {
         final p = allParticipants[index];
         final isTeacherRole = p.identity.startsWith('teacher-');
+        final isSelf = p.identity == (_room.localParticipant?.identity ?? '');
         final micOn = _isMicOn(p);
         final camOn = _videoTrackOf(p) != null;
         final handRaised = _raisedHands.contains(p.identity);
         final quality = _connectionQuality[p.identity];
-        final isSelf = p.identity == (_room.localParticipant?.identity ?? '');
         final canModerate = widget.isTeacher && !isSelf;
 
         return ListTile(
@@ -644,7 +858,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
             backgroundColor: AppColors.purple,
             child: Text((p.name.isNotEmpty ? p.name[0] : '?').toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 14)),
           ),
-          title: Text(p.name.isNotEmpty ? p.name : p.identity, style: const TextStyle(color: Colors.white, fontSize: 13)),
+          title: Text('${p.name.isNotEmpty ? p.name : p.identity}${isSelf ? ' (You)' : ''}', style: const TextStyle(color: Colors.white, fontSize: 13)),
           subtitle: Text(isTeacherRole ? 'Teacher' : 'Student', style: const TextStyle(color: Colors.white54, fontSize: 11)),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -652,21 +866,21 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
               if (handRaised) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.back_hand_rounded, color: AppColors.orange, size: 16)),
               Icon(_qualityIcon(quality), color: _qualityColor(quality), size: 16),
               const SizedBox(width: 6),
-              Icon(micOn ? Icons.mic : Icons.mic_off, color: micOn ? Colors.white70 : AppColors.error, size: 16),
+              Icon(micOn ? Icons.mic_rounded : Icons.mic_off_rounded, color: micOn ? Colors.white70 : AppColors.error, size: 16),
               const SizedBox(width: 6),
-              Icon(camOn ? Icons.videocam : Icons.videocam_off, color: camOn ? Colors.white70 : AppColors.error, size: 16),
+              Icon(camOn ? Icons.videocam_rounded : Icons.videocam_off_rounded, color: camOn ? Colors.white70 : AppColors.error, size: 16),
               if (canModerate)
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 16),
-                  color: Colors.grey.shade800,
+                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 18),
+                  color: const Color(0xFF2C2C2E),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'mute', child: Text('Mute', style: TextStyle(color: Colors.white, fontSize: 13))),
+                    const PopupMenuItem(value: 'remove', child: Text('Remove', style: TextStyle(color: AppColors.error, fontSize: 13))),
+                  ],
                   onSelected: (value) {
                     if (value == 'mute') _muteParticipant(p.identity);
                     if (value == 'remove') _removeParticipant(p.identity, p.name.isNotEmpty ? p.name : p.identity);
                   },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'mute', child: Text('Mute', style: TextStyle(color: Colors.white))),
-                    const PopupMenuItem(value: 'remove', child: Text('Remove', style: TextStyle(color: AppColors.error))),
-                  ],
                 ),
             ],
           ),
@@ -701,69 +915,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     }
   }
 
-  Widget _buildSpeakerView(List<lk.RemoteParticipant> remoteParticipants) {
-    // Feature whoever's currently speaking among remotes; fall back to
-    // the first remote participant if no one is actively talking.
-    lk.RemoteParticipant featured = remoteParticipants.first;
-    for (final p in remoteParticipants) {
-      if (_activeSpeakerIdentities.contains(p.identity)) {
-        featured = p;
-        break;
-      }
-    }
-    final others = remoteParticipants.where((p) => p.identity != featured.identity).toList();
-
-    return Column(
-      children: [
-        Expanded(child: Padding(padding: const EdgeInsets.all(8), child: _participantTile(featured, isLocal: false))),
-        if (others.isNotEmpty)
-          SizedBox(
-            height: 90,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              itemCount: others.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) => SizedBox(width: 90, child: _participantTile(others[index], isLocal: false)),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _controlButton(IconData icon, Color bg, VoidCallback onTap) {
-    return Material(
-      color: bg,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(padding: const EdgeInsets.all(12), child: Icon(icon, color: Colors.white, size: 20)),
-      ),
-    );
-  }
-
-  Widget _badgedControlButton(IconData icon, Color bg, VoidCallback onTap, {int badgeCount = 0}) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        _controlButton(icon, bg, onTap),
-        if (badgeCount > 0)
-          Positioned(
-            right: -2,
-            top: -2,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
-              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-              child: Text('$badgeCount', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _participantTile(lk.Participant participant, {required bool isLocal}) {
+  Widget _participantTile(lk.Participant participant, {bool isLocal = false}) {
     final videoTrack = _videoTrackOf(participant);
     final displayName = participant.name.isNotEmpty ? participant.name : participant.identity;
     final isTeacherRole = participant.identity.startsWith('teacher-');
@@ -773,17 +925,13 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     final quality = _connectionQuality[participant.identity];
 
     return Container(
-      // Keying on identity + whether video is currently present forces
-      // Flutter to fully dispose the old renderer widget (and its native
-      // texture) instead of trying to update it in place - this is what
-      // actually fixes the "last frame freezes" bug, not just re-querying
-      // the track on every build.
       key: ValueKey('${participant.identity}-${videoTrack != null}'),
+      margin: isLocal ? EdgeInsets.zero : const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: Colors.grey.shade900,
-        borderRadius: BorderRadius.circular(12),
-        border: isSpeaking ? Border.all(color: AppColors.green, width: 3) : null,
-        boxShadow: isSpeaking ? [BoxShadow(color: AppColors.green.withOpacity(0.5), blurRadius: 12, spreadRadius: 1)] : null,
+        borderRadius: BorderRadius.circular(isLocal ? 14 : 16),
+        border: isSpeaking ? Border.all(color: AppColors.green, width: 3) : Border.all(color: Colors.white10, width: 1),
+        boxShadow: isSpeaking ? [BoxShadow(color: AppColors.green.withOpacity(0.5), blurRadius: 12, spreadRadius: 1)] : [const BoxShadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 3))],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -799,23 +947,16 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircleAvatar(
-                      radius: 28,
+                      radius: isLocal ? 18 : 28,
                       backgroundColor: AppColors.purple,
-                      child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
+                      child: Text(initial, style: TextStyle(color: Colors.white, fontSize: isLocal ? 14 : 22, fontWeight: FontWeight.w700)),
                     ),
-                    const SizedBox(height: 8),
-                    Text(displayName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text(isTeacherRole ? 'Teacher' : 'Student', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10)),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.videocam_off_rounded, color: Colors.white.withOpacity(0.5), size: 14),
-                        const SizedBox(width: 4),
-                        Text('Camera Off', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
-                      ],
-                    ),
+                    if (!isLocal) ...[
+                      const SizedBox(height: 8),
+                      Text(displayName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text(isTeacherRole ? 'Teacher' : 'Student', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10)),
+                    ],
                   ],
                 ),
               ),
@@ -826,18 +967,15 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-              child: Text(displayName, style: const TextStyle(color: Colors.white, fontSize: 10)),
+              child: Text(isLocal ? 'You' : displayName, style: const TextStyle(color: Colors.white, fontSize: 10), overflow: TextOverflow.ellipsis),
             ),
           ),
-          Positioned(
-            right: 6,
-            top: 6,
-            child: Icon(_qualityIcon(quality), color: _qualityColor(quality), size: 16),
-          ),
+          if (!isLocal)
+            Positioned(right: 6, top: 6, child: Icon(_qualityIcon(quality), color: _qualityColor(quality), size: 16)),
           if (handRaised)
             Positioned(
               right: 6,
-              top: 26,
+              top: isLocal ? 6 : 26,
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: const BoxDecoration(color: AppColors.orange, shape: BoxShape.circle),

@@ -50,6 +50,8 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
               url: session.url,
               token: session.token,
               classTitle: widget.liveClass.title,
+              subjectName: widget.liveClass.subjectName,
+              lessonTitle: widget.liveClass.lessonTitle,
               isTeacher: false,
             ),
           ),

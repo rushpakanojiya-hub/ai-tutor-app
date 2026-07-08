@@ -100,6 +100,8 @@ class _MyLiveClassesScreenState extends State<MyLiveClassesScreen> {
             url: session.url,
             token: session.token,
             classTitle: c.title,
+            subjectName: c.subjectName,
+            lessonTitle: c.lessonTitle,
             isTeacher: true,
             onEndClass: () => _service.endClass(c.id),
           ),
