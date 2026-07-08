@@ -36,6 +36,7 @@ type LiveClass struct {
 	Status          string    `json:"status"` // scheduled | completed | cancelled | missed (computed)
 	RoomName        string    `json:"room_name,omitempty"`
 	MeetingStatus   string    `json:"meeting_status"` // not_started | live | ended
+	Locked          bool      `json:"locked"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	EndedAt         *time.Time `json:"ended_at,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -116,4 +117,16 @@ type AttendanceSummary struct {
 	TotalCompletedClasses int     `json:"total_completed_classes"`
 	AttendedCount         int     `json:"attended_count"`
 	Percentage            float64 `json:"percentage"`
+}
+
+// ParticipantActionRequest is the body for mute/remove endpoints -
+// identity matches the LiveKit participant identity ("teacher-{id}" or
+// "student-{id}"), not our own numeric user IDs.
+type ParticipantActionRequest struct {
+	Identity string `json:"identity" binding:"required"`
+}
+
+// LockRequest is the body for POST /api/live-classes/:id/lock.
+type LockRequest struct {
+	Locked bool `json:"locked"`
 }

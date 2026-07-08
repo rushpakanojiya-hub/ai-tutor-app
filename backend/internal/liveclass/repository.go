@@ -136,7 +136,7 @@ const liveClassSelect = `
 	SELECT lc.id, lc.teacher_id, u.name, lc.subject_id, COALESCE(s.name, ''), lc.lesson_id, COALESCE(l.title, ''),
 	       lc.title, lc.description, lc.class_date::text, lc.start_time::text, lc.end_time::text,
 	       lc.max_students, lc.is_public, (lc.meeting_password IS NOT NULL), lc.record_class,
-	       ` + computedStatusExpr + `, COALESCE(lc.room_name, ''), lc.meeting_status, lc.started_at, lc.ended_at, lc.created_at
+	       ` + computedStatusExpr + `, COALESCE(lc.room_name, ''), lc.meeting_status, lc.locked, lc.started_at, lc.ended_at, lc.created_at
 	FROM live_classes lc
 	JOIN users u ON u.id = lc.teacher_id
 	LEFT JOIN subjects s ON s.id = lc.subject_id
@@ -152,7 +152,7 @@ func scanLiveClass(row interface{ Scan(...any) error }) (LiveClass, error) {
 		&c.ID, &c.TeacherID, &c.TeacherName, &subjectID, &subjectName, &lessonID, &lessonTitle,
 		&c.Title, &c.Description, &c.ClassDate, &c.StartTime, &c.EndTime,
 		&maxStudents, &c.IsPublic, &c.HasPassword, &c.RecordClass, &c.Status,
-		&c.RoomName, &c.MeetingStatus, &c.StartedAt, &c.EndedAt, &c.CreatedAt,
+		&c.RoomName, &c.MeetingStatus, &c.Locked, &c.StartedAt, &c.EndedAt, &c.CreatedAt,
 	)
 	if subjectID.Valid {
 		id := int(subjectID.Int64)
@@ -228,6 +228,15 @@ func (r *Repository) GetUserName(userID int) (string, error) {
 	var name string
 	err := r.db.QueryRow(`SELECT name FROM users WHERE id = $1`, userID).Scan(&name)
 	return name, err
+}
+
+// SetLocked toggles whether new students can join - ownership-checked.
+func (r *Repository) SetLocked(classID, teacherID int, locked bool) error {
+	if err := r.checkOwnership(classID, teacherID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(`UPDATE live_classes SET locked = $1, updated_at = now() WHERE id = $2`, locked, classID)
+	return err
 }
 
 // --- Attendance (self check-in) ---

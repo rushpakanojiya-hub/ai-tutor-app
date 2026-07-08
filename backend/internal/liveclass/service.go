@@ -150,6 +150,8 @@ func (s *Service) Start(classID, teacherID int) (*StartResponse, error) {
 // and records a check-in (bypassing the schedule-window rule used by the
 // manual "I'm Present" button - actually joining the real call is a
 // stronger attendance signal than the honor-system button).
+var ErrRoomLocked = fmt.Errorf("the teacher has locked this class to new joins")
+
 func (s *Service) Join(classID, studentID int) (*JoinResponse, error) {
 	class, err := s.repo.GetByID(classID)
 	if err != nil {
@@ -157,6 +159,9 @@ func (s *Service) Join(classID, studentID int) (*JoinResponse, error) {
 	}
 	if class.MeetingStatus != MeetingLive {
 		return nil, ErrMeetingNotLive
+	}
+	if class.Locked {
+		return nil, ErrRoomLocked
 	}
 
 	studentName, _ := s.repo.GetUserName(studentID)
@@ -195,6 +200,53 @@ func (s *Service) GetMeetingStatus(classID int) (string, error) {
 		return "", err
 	}
 	return class.MeetingStatus, nil
+}
+
+// --- Teacher moderation (needs LiveKit's server-side admin API - a
+// participant can never force-mute or remove another participant purely
+// from the client SDK) ---
+
+func (s *Service) MuteParticipant(classID, teacherID int, targetIdentity string) error {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return err
+	}
+	if class.TeacherID != teacherID {
+		return ErrForbidden
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.roomClient.MuteParticipant(ctx, class.RoomName, targetIdentity)
+}
+
+func (s *Service) RemoveParticipant(classID, teacherID int, targetIdentity string) error {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return err
+	}
+	if class.TeacherID != teacherID {
+		return ErrForbidden
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.roomClient.RemoveParticipant(ctx, class.RoomName, targetIdentity)
+}
+
+func (s *Service) MuteAll(classID, teacherID int) error {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return err
+	}
+	if class.TeacherID != teacherID {
+		return ErrForbidden
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.roomClient.MuteAllExcept(ctx, class.RoomName, fmt.Sprintf("teacher-%d", teacherID))
+}
+
+func (s *Service) SetLocked(classID, teacherID int, locked bool) error {
+	return s.repo.SetLocked(classID, teacherID, locked)
 }
 
 // --- Attendance ---

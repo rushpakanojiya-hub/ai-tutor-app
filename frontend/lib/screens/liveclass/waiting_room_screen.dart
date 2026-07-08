@@ -46,6 +46,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
           context,
           MaterialPageRoute(
             builder: (_) => LiveClassRoomScreen(
+              classId: widget.liveClass.id,
               url: session.url,
               token: session.token,
               classTitle: widget.liveClass.title,

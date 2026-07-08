@@ -17,6 +17,7 @@ class LiveClassModel {
   final bool recordClass;
   final String status; // scheduled | completed | cancelled | missed
   final String meetingStatus; // not_started | live | ended
+  final bool locked;
   final DateTime createdAt;
 
   LiveClassModel({
@@ -38,6 +39,7 @@ class LiveClassModel {
     required this.recordClass,
     required this.status,
     this.meetingStatus = 'not_started',
+    this.locked = false,
     required this.createdAt,
   });
 
@@ -71,6 +73,7 @@ class LiveClassModel {
       recordClass: json['record_class'] as bool? ?? false,
       status: json['status'] as String? ?? 'scheduled',
       meetingStatus: json['meeting_status'] as String? ?? 'not_started',
+      locked: json['locked'] as bool? ?? false,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }

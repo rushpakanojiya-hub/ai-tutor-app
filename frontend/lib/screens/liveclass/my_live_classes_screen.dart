@@ -96,6 +96,7 @@ class _MyLiveClassesScreenState extends State<MyLiveClassesScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => LiveClassRoomScreen(
+            classId: c.id,
             url: session.url,
             token: session.token,
             classTitle: c.title,

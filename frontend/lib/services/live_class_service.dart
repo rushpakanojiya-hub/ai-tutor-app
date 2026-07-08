@@ -97,4 +97,12 @@ class LiveClassService {
     final response = await _api.get(ApiConstants.liveClassMeetingStatus(classId));
     return (response['data'] as Map<String, dynamic>)['meeting_status'] as String? ?? 'not_started';
   }
+
+  // --- Teacher moderation ---
+
+  Future<void> muteParticipant(int classId, String identity) async => _api.post(ApiConstants.liveClassMute(classId, identity), {});
+  Future<void> removeParticipant(int classId, String identity) async => _api.post(ApiConstants.liveClassRemove(classId, identity), {});
+  Future<void> muteAll(int classId) async => _api.post(ApiConstants.liveClassMuteAll(classId), {});
+  Future<void> lockRoom(int classId) async => _api.post(ApiConstants.liveClassLock(classId), {});
+  Future<void> unlockRoom(int classId) async => _api.post(ApiConstants.liveClassUnlock(classId), {});
 }

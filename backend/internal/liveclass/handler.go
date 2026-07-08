@@ -282,6 +282,85 @@ func (h *Handler) MeetingStatus(c *gin.Context) {
 	utils.RespondSuccess(c, http.StatusOK, "Status fetched", gin.H{"meeting_status": status})
 }
 
+// --- Teacher moderation ---
+
+// MuteParticipant handles POST /api/live-classes/:id/mute/:identity.
+func (h *Handler) MuteParticipant(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	identity := c.Param("identity")
+	teacherID := c.GetInt("user_id")
+	if err := h.service.MuteParticipant(id, teacherID, identity); err != nil {
+		respondForMeetingError(c, err, "Failed to mute participant")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Participant muted", nil)
+}
+
+// RemoveParticipant handles POST /api/live-classes/:id/remove/:identity.
+func (h *Handler) RemoveParticipant(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	identity := c.Param("identity")
+	teacherID := c.GetInt("user_id")
+	if err := h.service.RemoveParticipant(id, teacherID, identity); err != nil {
+		respondForMeetingError(c, err, "Failed to remove participant")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Participant removed", nil)
+}
+
+// MuteAll handles POST /api/live-classes/:id/mute-all.
+func (h *Handler) MuteAll(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	teacherID := c.GetInt("user_id")
+	if err := h.service.MuteAll(id, teacherID); err != nil {
+		respondForMeetingError(c, err, "Failed to mute all participants")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "All participants muted", nil)
+}
+
+// Lock handles POST /api/live-classes/:id/lock.
+func (h *Handler) Lock(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	teacherID := c.GetInt("user_id")
+	if err := h.service.SetLocked(id, teacherID, true); err != nil {
+		respondForMeetingError(c, err, "Failed to lock class")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Class locked", nil)
+}
+
+// Unlock handles POST /api/live-classes/:id/unlock.
+func (h *Handler) Unlock(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	teacherID := c.GetInt("user_id")
+	if err := h.service.SetLocked(id, teacherID, false); err != nil {
+		respondForMeetingError(c, err, "Failed to unlock class")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Class unlocked", nil)
+}
+
 func respondForMeetingError(c *gin.Context, err error, fallback string) {
 	switch {
 	case errors.Is(err, ErrNotFound):
@@ -292,6 +371,8 @@ func respondForMeetingError(c *gin.Context, err error, fallback string) {
 		utils.RespondError(c, http.StatusConflict, "The teacher hasn't started this class yet")
 	case errors.Is(err, ErrMeetingAlreadyEnded):
 		utils.RespondError(c, http.StatusConflict, "This class has already ended")
+	case errors.Is(err, ErrRoomLocked):
+		utils.RespondError(c, http.StatusForbidden, "The teacher has locked this class to new joins")
 	default:
 		utils.RespondError(c, http.StatusInternalServerError, fallback)
 	}

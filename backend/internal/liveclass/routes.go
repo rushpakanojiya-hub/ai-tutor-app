@@ -18,6 +18,11 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware, r
 		teacherGroup.GET("/:id/attendance", handler.ListAttendance)
 		teacherGroup.POST("/:id/start", handler.Start)
 		teacherGroup.POST("/:id/end", handler.End)
+		teacherGroup.POST("/:id/mute/:identity", handler.MuteParticipant)
+		teacherGroup.POST("/:id/remove/:identity", handler.RemoveParticipant)
+		teacherGroup.POST("/:id/mute-all", handler.MuteAll)
+		teacherGroup.POST("/:id/lock", handler.Lock)
+		teacherGroup.POST("/:id/unlock", handler.Unlock)
 	}
 
 	group.GET("/:id", handler.GetByID)
