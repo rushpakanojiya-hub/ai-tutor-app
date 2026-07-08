@@ -19,6 +19,8 @@ import (
 	"ai-tutor-backend/internal/enrollment"
 	"ai-tutor-backend/internal/liveclass"
 	"ai-tutor-backend/internal/livekit"
+	"ai-tutor-backend/internal/cloudinary"
+	"ai-tutor-backend/internal/resource"
 	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
@@ -119,6 +121,11 @@ func main() {
 	liveKitTokenSvc := livekit.NewTokenService(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 	liveKitRoomClient := livekit.NewRoomClient(cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 
+	cloudinaryClient := cloudinary.NewClient(cfg.CloudinaryCloudName, cfg.CloudinaryAPIKey, cfg.CloudinaryAPISecret)
+	resourceRepo := resource.NewRepository(db)
+	resourceService := resource.NewService(resourceRepo, cloudinaryClient)
+	resourceHandler := resource.NewHandler(resourceService)
+
 	liveClassRepo := liveclass.NewRepository(db)
 	liveClassService := liveclass.NewService(liveClassRepo, notificationService, liveKitTokenSvc, liveKitRoomClient, cfg.LiveKitURL)
 	liveClassHandler := liveclass.NewHandler(liveClassService)
@@ -182,6 +189,7 @@ func main() {
 	assignment.RegisterAdminRoutes(api, assignmentHandler, authMiddleware, middleware.RequireAdmin())
 	liveclass.RegisterRoutes(api, liveClassHandler, authMiddleware, middleware.RequireTeacher())
 	liveclass.RegisterAdminRoutes(api, liveClassHandler, authMiddleware, middleware.RequireAdmin())
+	resource.RegisterRoutes(api, resourceHandler, authMiddleware, middleware.RequireTeacher())
 	notification.RegisterRoutes(api, notificationHandler, authMiddleware)
 
 	// Role-gated routes are still intentionally absent (see Day 1 notes) —

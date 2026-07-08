@@ -79,6 +79,26 @@ class ApiService {
     }
   }
 
+  /// For file uploads (Class Resources) - pass a Dio FormData built with
+  /// FormData.fromMap({'file': await MultipartFile.fromFile(path, filename: name)}).
+  /// onProgress receives a 0.0-1.0 fraction if provided.
+  Future<Map<String, dynamic>> postMultipart(String path, FormData formData, {void Function(double)? onProgress}) async {
+    try {
+      final response = await _dio.post(
+        path,
+        data: formData,
+        onSendProgress: onProgress == null
+            ? null
+            : (sent, total) {
+                if (total > 0) onProgress(sent / total);
+              },
+      );
+      return _asMap(response.data);
+    } on DioException catch (e) {
+      throw _translateError(e);
+    }
+  }
+
   Map<String, dynamic> _asMap(dynamic data) {
     if (data is Map<String, dynamic>) return data;
     return {'data': data};

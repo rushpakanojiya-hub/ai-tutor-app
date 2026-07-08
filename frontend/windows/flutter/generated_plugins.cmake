@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   livekit_client
   permission_handler_windows
   speech_to_text_windows
+  syncfusion_pdfviewer_windows
   url_launcher_windows
 )
 

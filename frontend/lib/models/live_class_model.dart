@@ -53,6 +53,16 @@ class LiveClassModel {
     }
   }
 
+  DateTime? get endDateTime {
+    try {
+      final parts = classDate.split('-').map(int.parse).toList();
+      final timeParts = endTime.split(':').map(int.parse).toList();
+      return DateTime(parts[0], parts[1], parts[2], timeParts[0], timeParts[1]);
+    } catch (_) {
+      return null;
+    }
+  }
+
   factory LiveClassModel.fromJson(Map<String, dynamic> json) {
     return LiveClassModel(
       id: json['id'] as int,
@@ -144,5 +154,45 @@ class MeetingSession {
       url: json['url'] as String? ?? '',
       roomName: json['room_name'] as String? ?? '',
     );
+  }
+}
+
+/// A teacher-uploaded file (PDF/PPT/image/doc/video) attached to a live
+/// class, hosted on Cloudinary.
+class ClassResourceModel {
+  final int id;
+  final int liveClassId;
+  final String fileName;
+  final String fileType; // pdf | ppt | doc | xls | image | video | file
+  final String fileUrl;
+  final int fileSizeBytes;
+  final DateTime uploadedAt;
+
+  ClassResourceModel({
+    required this.id,
+    required this.liveClassId,
+    required this.fileName,
+    required this.fileType,
+    required this.fileUrl,
+    required this.fileSizeBytes,
+    required this.uploadedAt,
+  });
+
+  factory ClassResourceModel.fromJson(Map<String, dynamic> json) {
+    return ClassResourceModel(
+      id: json['id'] as int? ?? 0,
+      liveClassId: json['live_class_id'] as int? ?? 0,
+      fileName: json['file_name'] as String? ?? '',
+      fileType: json['file_type'] as String? ?? 'file',
+      fileUrl: json['file_url'] as String? ?? '',
+      fileSizeBytes: json['file_size_bytes'] as int? ?? 0,
+      uploadedAt: DateTime.tryParse(json['uploaded_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+
+  String get formattedSize {
+    if (fileSizeBytes < 1024) return '$fileSizeBytes B';
+    if (fileSizeBytes < 1024 * 1024) return '${(fileSizeBytes / 1024).toStringAsFixed(1)} KB';
+    return '${(fileSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }

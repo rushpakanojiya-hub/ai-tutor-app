@@ -96,6 +96,8 @@ class ApiConstants {
   static String liveClassJoin(int id) => '/live-classes/$id/join';
   static String liveClassEnd(int id) => '/live-classes/$id/end';
   static String liveClassMeetingStatus(int id) => '/live-classes/$id/meeting-status';
+  static String liveClassResources(int id) => '/live-classes/$id/resources';
+  static String liveClassResourceDelete(int classId, int resourceId) => '/live-classes/$classId/resources/$resourceId';
   static String liveClassMute(int id, String identity) => '/live-classes/$id/mute/$identity';
   static String liveClassRemove(int id, String identity) => '/live-classes/$id/remove/$identity';
   static String liveClassMuteAll(int id) => '/live-classes/$id/mute-all';

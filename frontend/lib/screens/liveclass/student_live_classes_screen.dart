@@ -104,7 +104,19 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => LiveClassRoomScreen(classId: c.id, url: session.url, token: session.token, classTitle: c.title, subjectName: c.subjectName, lessonTitle: c.lessonTitle, isTeacher: false),
+          builder: (_) => LiveClassRoomScreen(
+            classId: c.id,
+            url: session.url,
+            token: session.token,
+            classTitle: c.title,
+            subjectName: c.subjectName,
+            lessonTitle: c.lessonTitle,
+            description: c.description,
+            subjectId: c.subjectId,
+            scheduledStart: c.dateTime,
+            scheduledEnd: c.endDateTime,
+            isTeacher: false,
+          ),
         ),
       );
       _load();

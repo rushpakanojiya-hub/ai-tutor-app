@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/live_class_model.dart';
 import 'api_service.dart';
@@ -105,4 +106,24 @@ class LiveClassService {
   Future<void> muteAll(int classId) async => _api.post(ApiConstants.liveClassMuteAll(classId), {});
   Future<void> lockRoom(int classId) async => _api.post(ApiConstants.liveClassLock(classId), {});
   Future<void> unlockRoom(int classId) async => _api.post(ApiConstants.liveClassUnlock(classId), {});
+
+  // --- Class Resources (GCS-backed file uploads) ---
+
+  Future<ClassResourceModel> uploadResource(int classId, String filePath, String fileName, {void Function(double)? onProgress}) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+    });
+    final response = await _api.postMultipart(ApiConstants.liveClassResources(classId), formData, onProgress: onProgress);
+    return ClassResourceModel.fromJson(response['data'] as Map<String, dynamic>);
+  }
+
+  Future<List<ClassResourceModel>> fetchResources(int classId) async {
+    final response = await _api.get(ApiConstants.liveClassResources(classId));
+    final list = response['data'] as List<dynamic>? ?? [];
+    return list.map((e) => ClassResourceModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> deleteResource(int classId, int resourceId) async {
+    await _api.delete(ApiConstants.liveClassResourceDelete(classId, resourceId));
+  }
 }

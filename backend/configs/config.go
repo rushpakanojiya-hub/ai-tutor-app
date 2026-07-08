@@ -51,6 +51,11 @@ type Config struct {
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
+
+	// Cloudinary — powers Class Resources file uploads (internal/resource).
+	CloudinaryCloudName string
+	CloudinaryAPIKey    string
+	CloudinaryAPISecret string
 }
 
 // LoadConfig reads the .env file (if present) and environment variables,
@@ -89,6 +94,10 @@ func LoadConfig() *Config {
 		LiveKitURL:       getEnv("LIVEKIT_URL", ""),
 		LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", ""),
 		LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", ""),
+
+		CloudinaryCloudName: getEnv("CLOUDINARY_CLOUD_NAME", ""),
+		CloudinaryAPIKey:    getEnv("CLOUDINARY_API_KEY", ""),
+		CloudinaryAPISecret: getEnv("CLOUDINARY_API_SECRET", ""),
 	}
 }
 
