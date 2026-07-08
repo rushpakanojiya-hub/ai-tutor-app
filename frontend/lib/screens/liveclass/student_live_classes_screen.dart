@@ -5,6 +5,8 @@ import '../../core/theme/app_theme.dart';
 import '../../models/live_class_model.dart';
 import '../../services/live_class_service.dart';
 import '../../widgets/skeleton_box.dart';
+import 'live_class_room_screen.dart';
+import 'waiting_room_screen.dart';
 
 /// Student's class schedule - grouped into Upcoming / Past. Each upcoming
 /// class shows a live countdown and a check-in button (self-attendance,
@@ -90,15 +92,25 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
     return now.isAfter(dt) && now.isBefore(end);
   }
 
-  void _showJoinPlaceholder(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Video calling coming soon'),
-        content: const Text('Live video isn\'t available on this platform yet. Your teacher will share how to join separately for now.'),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-      ),
-    );
+  Future<void> _join(LiveClassModel c) async {
+    if (c.meetingStatus != 'live') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => WaitingRoomScreen(liveClass: c)));
+      _load();
+      return;
+    }
+    try {
+      final session = await _service.joinClass(c.id);
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LiveClassRoomScreen(url: session.url, token: session.token, classTitle: c.title, isTeacher: false),
+        ),
+      );
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not join the class. Please try again.')));
+    }
   }
 
   Future<void> _checkIn(LiveClassModel c) async {
@@ -199,7 +211,12 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: AppColors.purpleLight, borderRadius: BorderRadius.circular(20)),
-              child: Text(withinWindow ? 'Live now' : 'Starts in ${_countdownText(dt)}', style: const TextStyle(color: AppColors.purple, fontSize: 11, fontWeight: FontWeight.w700)),
+              child: Text(
+                c.meetingStatus == 'live'
+                    ? 'Live now'
+                    : (withinWindow ? 'Starts in ${_countdownText(dt)}' : 'Starts in ${_countdownText(dt)}'),
+                style: const TextStyle(color: AppColors.purple, fontSize: 11, fontWeight: FontWeight.w700),
+              ),
             ),
           ],
           const SizedBox(height: 12),
@@ -214,9 +231,9 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.purple),
-                  onPressed: () => _showJoinPlaceholder(context),
-                  child: const Text('Join Class'),
+                  style: ElevatedButton.styleFrom(backgroundColor: c.meetingStatus == 'live' ? AppColors.green : AppColors.purple),
+                  onPressed: () => _join(c),
+                  child: Text(c.meetingStatus == 'live' ? 'Join Now' : 'Join Class'),
                 ),
               ),
             ],

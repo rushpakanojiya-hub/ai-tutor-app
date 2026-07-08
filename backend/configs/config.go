@@ -45,6 +45,12 @@ type Config struct {
 	// keys for quota rotation, e.g. YOUTUBE_API_KEY=key1,key2,key3
 	YoutubeAPIKeys    []string
 	YoutubeMaxResults int
+
+	// LiveKit — powers real video calling for Live Classes
+	// (internal/livekit). Get these from cloud.livekit.io project settings.
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
 }
 
 // LoadConfig reads the .env file (if present) and environment variables,
@@ -79,6 +85,10 @@ func LoadConfig() *Config {
 
 		YoutubeAPIKeys:    parseCommaList(getEnv("YOUTUBE_API_KEY", "")),
 		YoutubeMaxResults: getEnvAsInt("YOUTUBE_MAX_RESULTS", 5),
+
+		LiveKitURL:       getEnv("LIVEKIT_URL", ""),
+		LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", ""),
+		LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", ""),
 	}
 }
 

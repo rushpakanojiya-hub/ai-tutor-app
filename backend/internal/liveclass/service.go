@@ -1,19 +1,25 @@
 package liveclass
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"time"
 
+	"ai-tutor-backend/internal/livekit"
 	"ai-tutor-backend/internal/notification"
 )
 
 type Service struct {
 	repo            *Repository
 	notificationSvc *notification.Service
+	tokenSvc        *livekit.TokenService
+	roomClient      *livekit.RoomClient
+	livekitURL      string
 }
 
-func NewService(repo *Repository, notificationSvc *notification.Service) *Service {
-	return &Service{repo: repo, notificationSvc: notificationSvc}
+func NewService(repo *Repository, notificationSvc *notification.Service, tokenSvc *livekit.TokenService, roomClient *livekit.RoomClient, livekitURL string) *Service {
+	return &Service{repo: repo, notificationSvc: notificationSvc, tokenSvc: tokenSvc, roomClient: roomClient, livekitURL: livekitURL}
 }
 
 func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
@@ -92,6 +98,103 @@ func (s *Service) ListForStudent() ([]LiveClass, error) {
 
 func (s *Service) ListAllForAdmin() ([]LiveClass, error) {
 	return s.repo.ListAllForAdmin()
+}
+
+// --- Real video session (LiveKit) ---
+
+var ErrMeetingNotLive = fmt.Errorf("the teacher hasn't started this class yet")
+var ErrMeetingAlreadyEnded = fmt.Errorf("this class has already ended")
+
+// Start creates (or reuses) the LiveKit room, marks the class live, and
+// returns everything the teacher's Flutter app needs to connect.
+func (s *Service) Start(classID, teacherID int) (*StartResponse, error) {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return nil, err
+	}
+	if class.TeacherID != teacherID {
+		return nil, ErrForbidden
+	}
+	if class.MeetingStatus == MeetingEnded {
+		return nil, ErrMeetingAlreadyEnded
+	}
+
+	roomName := class.RoomName
+	if roomName == "" {
+		roomName = fmt.Sprintf("class-%d", classID)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.roomClient.EnsureRoom(ctx, roomName); err != nil {
+		log.Printf("[liveclass] EnsureRoom failed for room %q: %v", roomName, err)
+		return nil, fmt.Errorf("could not reach LiveKit: %w", err)
+	}
+
+	if err := s.repo.SetMeetingLive(classID, teacherID, roomName); err != nil {
+		log.Printf("[liveclass] SetMeetingLive DB update failed for class %d: %v", classID, err)
+		return nil, err
+	}
+
+	teacherName, _ := s.repo.GetUserName(teacherID)
+	token, err := s.tokenSvc.GenerateToken(roomName, fmt.Sprintf("teacher-%d", teacherID), teacherName, true)
+	if err != nil {
+		log.Printf("[liveclass] GenerateToken failed for teacher %d: %v", teacherID, err)
+		return nil, err
+	}
+
+	return &StartResponse{Token: token, URL: s.livekitURL, RoomName: roomName}, nil
+}
+
+// Join validates the class is actually live, generates a student token,
+// and records a check-in (bypassing the schedule-window rule used by the
+// manual "I'm Present" button - actually joining the real call is a
+// stronger attendance signal than the honor-system button).
+func (s *Service) Join(classID, studentID int) (*JoinResponse, error) {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return nil, err
+	}
+	if class.MeetingStatus != MeetingLive {
+		return nil, ErrMeetingNotLive
+	}
+
+	studentName, _ := s.repo.GetUserName(studentID)
+	token, err := s.tokenSvc.GenerateToken(class.RoomName, fmt.Sprintf("student-%d", studentID), studentName, false)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.repo.CheckIn(classID, studentID, AttendancePresent) // best-effort, real join = present
+
+	return &JoinResponse{Token: token, URL: s.livekitURL, RoomName: class.RoomName}, nil
+}
+
+// End closes the LiveKit room and marks the meeting ended.
+func (s *Service) End(classID, teacherID int) error {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return err
+	}
+	if class.TeacherID != teacherID {
+		return ErrForbidden
+	}
+
+	if class.RoomName != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = s.roomClient.EndRoom(ctx, class.RoomName) // best-effort - still mark ended even if this fails
+	}
+
+	return s.repo.SetMeetingEnded(classID, teacherID)
+}
+
+func (s *Service) GetMeetingStatus(classID int) (string, error) {
+	class, err := s.repo.GetByID(classID)
+	if err != nil {
+		return "", err
+	}
+	return class.MeetingStatus, nil
 }
 
 // --- Attendance ---

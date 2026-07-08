@@ -18,6 +18,7 @@ import (
 	"ai-tutor-backend/internal/categories"
 	"ai-tutor-backend/internal/enrollment"
 	"ai-tutor-backend/internal/liveclass"
+	"ai-tutor-backend/internal/livekit"
 	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
@@ -115,8 +116,11 @@ func main() {
 	notificationService := notification.NewService(notificationRepo)
 	notificationHandler := notification.NewHandler(notificationService)
 
+	liveKitTokenSvc := livekit.NewTokenService(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
+	liveKitRoomClient := livekit.NewRoomClient(cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
+
 	liveClassRepo := liveclass.NewRepository(db)
-	liveClassService := liveclass.NewService(liveClassRepo, notificationService)
+	liveClassService := liveclass.NewService(liveClassRepo, notificationService, liveKitTokenSvc, liveKitRoomClient, cfg.LiveKitURL)
 	liveClassHandler := liveclass.NewHandler(liveClassService)
 
 	recommendationsRepo := recommendations.NewRepository(db)

@@ -92,6 +92,10 @@ class ApiConstants {
   static String liveClassMyAttendance(int id) => '/live-classes/$id/my-attendance';
   static String liveClassAttendance(int id) => '/live-classes/$id/attendance';
   static const String liveClassAttendanceSummary = '/live-classes/attendance-summary';
+  static String liveClassStart(int id) => '/live-classes/$id/start';
+  static String liveClassJoin(int id) => '/live-classes/$id/join';
+  static String liveClassEnd(int id) => '/live-classes/$id/end';
+  static String liveClassMeetingStatus(int id) => '/live-classes/$id/meeting-status';
 
   // --- Notifications ---
   static const String notifications = '/notifications';

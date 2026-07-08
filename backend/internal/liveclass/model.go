@@ -34,7 +34,34 @@ type LiveClass struct {
 	HasPassword     bool      `json:"has_password"`
 	RecordClass     bool      `json:"record_class"`
 	Status          string    `json:"status"` // scheduled | completed | cancelled | missed (computed)
+	RoomName        string    `json:"room_name,omitempty"`
+	MeetingStatus   string    `json:"meeting_status"` // not_started | live | ended
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	EndedAt         *time.Time `json:"ended_at,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+// Meeting status - separate from the schedule Status above; tracks the
+// actual video session lifecycle.
+const (
+	MeetingNotStarted = "not_started"
+	MeetingLive       = "live"
+	MeetingEnded      = "ended"
+)
+
+// StartResponse is returned when a teacher starts a class - everything
+// the Flutter app's LiveKit client needs to connect.
+type StartResponse struct {
+	Token    string `json:"token"`
+	URL      string `json:"url"`
+	RoomName string `json:"room_name"`
+}
+
+// JoinResponse is the same shape, returned to a student joining a live class.
+type JoinResponse struct {
+	Token    string `json:"token"`
+	URL      string `json:"url"`
+	RoomName string `json:"room_name"`
 }
 
 type CreateRequest struct {

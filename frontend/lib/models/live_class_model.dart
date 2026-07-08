@@ -16,6 +16,7 @@ class LiveClassModel {
   final bool hasPassword;
   final bool recordClass;
   final String status; // scheduled | completed | cancelled | missed
+  final String meetingStatus; // not_started | live | ended
   final DateTime createdAt;
 
   LiveClassModel({
@@ -36,6 +37,7 @@ class LiveClassModel {
     required this.hasPassword,
     required this.recordClass,
     required this.status,
+    this.meetingStatus = 'not_started',
     required this.createdAt,
   });
 
@@ -68,6 +70,7 @@ class LiveClassModel {
       hasPassword: json['has_password'] as bool? ?? false,
       recordClass: json['record_class'] as bool? ?? false,
       status: json['status'] as String? ?? 'scheduled',
+      meetingStatus: json['meeting_status'] as String? ?? 'not_started',
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -119,6 +122,24 @@ class AttendanceSummary {
       totalCompletedClasses: json['total_completed_classes'] as int? ?? 0,
       attendedCount: json['attended_count'] as int? ?? 0,
       percentage: (json['percentage'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+/// Everything the LiveKit client needs to connect - returned by both
+/// Start (teacher) and Join (student).
+class MeetingSession {
+  final String token;
+  final String url;
+  final String roomName;
+
+  MeetingSession({required this.token, required this.url, required this.roomName});
+
+  factory MeetingSession.fromJson(Map<String, dynamic> json) {
+    return MeetingSession(
+      token: json['token'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      roomName: json['room_name'] as String? ?? '',
     );
   }
 }

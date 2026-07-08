@@ -16,6 +16,8 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware, r
 		teacherGroup.POST("/:id/complete", handler.MarkCompleted)
 		teacherGroup.GET("/mine", handler.ListMine)
 		teacherGroup.GET("/:id/attendance", handler.ListAttendance)
+		teacherGroup.POST("/:id/start", handler.Start)
+		teacherGroup.POST("/:id/end", handler.End)
 	}
 
 	group.GET("/:id", handler.GetByID)
@@ -23,6 +25,8 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware, r
 	group.GET("/attendance-summary", handler.AttendanceSummary)
 	group.POST("/:id/check-in", handler.CheckIn)
 	group.GET("/:id/my-attendance", handler.GetMyAttendance)
+	group.POST("/:id/join", handler.Join)
+	group.GET("/:id/meeting-status", handler.MeetingStatus)
 }
 
 // RegisterAdminRoutes attaches the admin-only monitoring endpoints.

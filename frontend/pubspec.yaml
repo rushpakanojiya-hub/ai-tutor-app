@@ -22,12 +22,15 @@ dependencies:
   # Day 2: PDF notes (opened externally to avoid native PDF-render plugin
   # Gradle conflicts with newer Android Gradle Plugin versions)
   url_launcher: ^6.3.0
-  # UI redesign (visual only — no logic changes)
+  # UI redesign (visual only Ã¢â‚¬â€ no logic changes)
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
   flutter_svg: ^2.0.10+1
   # AI Tutor: basic speech-to-text voice input
   speech_to_text: ^7.0.0
+  # Live Classes: real video calling via LiveKit
+  livekit_client: ^2.3.0
+  permission_handler: ^11.3.1
   # AI Tutor: attach an image (camera/gallery) and extract text via on-device OCR
   image_picker: ^1.1.2
   google_mlkit_text_recognition: ^0.13.1

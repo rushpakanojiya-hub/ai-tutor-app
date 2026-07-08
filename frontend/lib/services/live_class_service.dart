@@ -78,4 +78,23 @@ class LiveClassService {
     final response = await _api.get(ApiConstants.liveClassAttendanceSummary);
     return AttendanceSummary.fromJson(response['data'] as Map<String, dynamic>);
   }
+
+  // --- Real video session (LiveKit) ---
+
+  Future<MeetingSession> startClass(int classId) async {
+    final response = await _api.post(ApiConstants.liveClassStart(classId), {});
+    return MeetingSession.fromJson(response['data'] as Map<String, dynamic>);
+  }
+
+  Future<MeetingSession> joinClass(int classId) async {
+    final response = await _api.post(ApiConstants.liveClassJoin(classId), {});
+    return MeetingSession.fromJson(response['data'] as Map<String, dynamic>);
+  }
+
+  Future<void> endClass(int classId) async => _api.post(ApiConstants.liveClassEnd(classId), {});
+
+  Future<String> fetchMeetingStatus(int classId) async {
+    final response = await _api.get(ApiConstants.liveClassMeetingStatus(classId));
+    return (response['data'] as Map<String, dynamic>)['meeting_status'] as String? ?? 'not_started';
+  }
 }

@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/live_class_model.dart';
 import '../../services/live_class_service.dart';
 import '../../widgets/skeleton_box.dart';
+import 'live_class_room_screen.dart';
 
 /// Teacher's scheduled classes with quick stats, plus attendance viewing
 /// per class. Cancel/mark-completed/delete are real actions against the
@@ -64,6 +65,49 @@ class _MyLiveClassesScreenState extends State<MyLiveClassesScreen> {
       ),
     );
     if (confirmed == true) _action(() => _service.delete(c.id));
+  }
+
+  Future<void> _endClassDirectly(LiveClassModel c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('End this class?'),
+        content: const Text('This will disconnect all students currently in the call.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('End Class', style: TextStyle(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _service.endClass(c.id);
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to end class.')));
+    }
+  }
+
+  Future<void> _startClass(LiveClassModel c) async {
+    try {
+      final session = await _service.startClass(c.id);
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LiveClassRoomScreen(
+            url: session.url,
+            token: session.token,
+            classTitle: c.title,
+            isTeacher: true,
+            onEndClass: () => _service.endClass(c.id),
+          ),
+        ),
+      );
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not start the class. Please try again.')));
+    }
   }
 
   Future<void> _viewAttendance(LiveClassModel c) async {
@@ -201,6 +245,26 @@ class _MyLiveClassesScreenState extends State<MyLiveClassesScreen> {
                                     spacing: 8,
                                     runSpacing: 8,
                                     children: [
+                                      if (c.status == 'scheduled' && c.meetingStatus == 'live')
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+                                          onPressed: () => _endClassDirectly(c),
+                                          icon: const Icon(Icons.call_end_rounded, size: 18, color: Colors.white),
+                                          label: const Text('End Class', style: TextStyle(color: Colors.white)),
+                                        )
+                                      else if (c.status == 'scheduled' && c.meetingStatus == 'not_started')
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.green),
+                                          onPressed: () => _startClass(c),
+                                          icon: const Icon(Icons.videocam_rounded, size: 18, color: Colors.white),
+                                          label: const Text('Start Class', style: TextStyle(color: Colors.white)),
+                                        )
+                                      else if (c.status == 'scheduled' && c.meetingStatus == 'ended')
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          decoration: BoxDecoration(color: AppColors.pageBackground, borderRadius: BorderRadius.circular(8)),
+                                          child: const Text('Class session ended', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                        ),
                                       OutlinedButton(onPressed: () => _viewAttendance(c), child: const Text('View Attendance')),
                                       if (c.status == 'scheduled') ...[
                                         OutlinedButton(onPressed: () => _action(() => _service.markCompleted(c.id)), child: const Text('Mark Completed')),

@@ -216,3 +216,83 @@ func (h *Handler) AttendanceSummary(c *gin.Context) {
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Summary fetched", summary)
 }
+
+// --- Real video session (LiveKit) ---
+
+// Start handles POST /api/live-classes/:id/start (teacher).
+func (h *Handler) Start(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	teacherID := c.GetInt("user_id")
+	result, err := h.service.Start(id, teacherID)
+	if err != nil {
+		respondForMeetingError(c, err, "Failed to start class")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Class started", result)
+}
+
+// Join handles POST /api/live-classes/:id/join (student).
+func (h *Handler) Join(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	studentID := c.GetInt("user_id")
+	result, err := h.service.Join(id, studentID)
+	if err != nil {
+		respondForMeetingError(c, err, "Failed to join class")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Joined class", result)
+}
+
+// End handles POST /api/live-classes/:id/end (teacher).
+func (h *Handler) End(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	teacherID := c.GetInt("user_id")
+	if err := h.service.End(id, teacherID); err != nil {
+		respondForMeetingError(c, err, "Failed to end class")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Class ended", nil)
+}
+
+// MeetingStatus handles GET /api/live-classes/:id/meeting-status (anyone -
+// students poll this to know when to enable their Join button).
+func (h *Handler) MeetingStatus(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
+	status, err := h.service.GetMeetingStatus(id)
+	if err != nil {
+		respondForError(c, err, "Failed to load meeting status")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Status fetched", gin.H{"meeting_status": status})
+}
+
+func respondForMeetingError(c *gin.Context, err error, fallback string) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		utils.RespondError(c, http.StatusNotFound, "Class not found")
+	case errors.Is(err, ErrForbidden):
+		utils.RespondError(c, http.StatusForbidden, "You can only manage classes you scheduled")
+	case errors.Is(err, ErrMeetingNotLive):
+		utils.RespondError(c, http.StatusConflict, "The teacher hasn't started this class yet")
+	case errors.Is(err, ErrMeetingAlreadyEnded):
+		utils.RespondError(c, http.StatusConflict, "This class has already ended")
+	default:
+		utils.RespondError(c, http.StatusInternalServerError, fallback)
+	}
+}

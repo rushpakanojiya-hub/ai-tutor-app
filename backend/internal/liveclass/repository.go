@@ -94,6 +94,30 @@ func (r *Repository) AdminCancel(classID int) error {
 	return err
 }
 
+// SetMeetingLive records that the teacher started the video session -
+// ownership-checked.
+func (r *Repository) SetMeetingLive(classID, teacherID int, roomName string) error {
+	if err := r.checkOwnership(classID, teacherID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(`
+		UPDATE live_classes SET room_name = $1, meeting_status = $2, started_at = now(), updated_at = now()
+		WHERE id = $3`, roomName, MeetingLive, classID)
+	return err
+}
+
+// SetMeetingEnded records that the teacher ended the video session -
+// ownership-checked.
+func (r *Repository) SetMeetingEnded(classID, teacherID int) error {
+	if err := r.checkOwnership(classID, teacherID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(`
+		UPDATE live_classes SET meeting_status = $1, ended_at = now(), updated_at = now()
+		WHERE id = $2`, MeetingEnded, classID)
+	return err
+}
+
 func (r *Repository) Delete(classID, teacherID int) error {
 	if err := r.checkOwnership(classID, teacherID); err != nil {
 		return err
@@ -112,7 +136,7 @@ const liveClassSelect = `
 	SELECT lc.id, lc.teacher_id, u.name, lc.subject_id, COALESCE(s.name, ''), lc.lesson_id, COALESCE(l.title, ''),
 	       lc.title, lc.description, lc.class_date::text, lc.start_time::text, lc.end_time::text,
 	       lc.max_students, lc.is_public, (lc.meeting_password IS NOT NULL), lc.record_class,
-	       ` + computedStatusExpr + `, lc.created_at
+	       ` + computedStatusExpr + `, COALESCE(lc.room_name, ''), lc.meeting_status, lc.started_at, lc.ended_at, lc.created_at
 	FROM live_classes lc
 	JOIN users u ON u.id = lc.teacher_id
 	LEFT JOIN subjects s ON s.id = lc.subject_id
@@ -127,7 +151,8 @@ func scanLiveClass(row interface{ Scan(...any) error }) (LiveClass, error) {
 	err := row.Scan(
 		&c.ID, &c.TeacherID, &c.TeacherName, &subjectID, &subjectName, &lessonID, &lessonTitle,
 		&c.Title, &c.Description, &c.ClassDate, &c.StartTime, &c.EndTime,
-		&maxStudents, &c.IsPublic, &c.HasPassword, &c.RecordClass, &c.Status, &c.CreatedAt,
+		&maxStudents, &c.IsPublic, &c.HasPassword, &c.RecordClass, &c.Status,
+		&c.RoomName, &c.MeetingStatus, &c.StartedAt, &c.EndedAt, &c.CreatedAt,
 	)
 	if subjectID.Valid {
 		id := int(subjectID.Int64)
@@ -197,6 +222,12 @@ func scanLiveClassRows(rows *sql.Rows) ([]LiveClass, error) {
 		result = append(result, c)
 	}
 	return result, rows.Err()
+}
+
+func (r *Repository) GetUserName(userID int) (string, error) {
+	var name string
+	err := r.db.QueryRow(`SELECT name FROM users WHERE id = $1`, userID).Scan(&name)
+	return name, err
 }
 
 // --- Attendance (self check-in) ---
