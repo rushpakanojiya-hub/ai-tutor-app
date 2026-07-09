@@ -32,7 +32,7 @@ func respondForError(c *gin.Context, err error, fallback string) {
 func (h *Handler) Create(c *gin.Context) {
 	var req CreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.RespondError(c, http.StatusBadRequest, "subject_id, title, class_date, start_time, and end_time are required")
+		utils.RespondError(c, http.StatusBadRequest, "subject_id, title, class_date, start_time, end_time, and max_students (at least 1) are required")
 		return
 	}
 	teacherID := c.GetInt("user_id")
@@ -373,6 +373,8 @@ func respondForMeetingError(c *gin.Context, err error, fallback string) {
 		utils.RespondError(c, http.StatusConflict, "This class has already ended")
 	case errors.Is(err, ErrRoomLocked):
 		utils.RespondError(c, http.StatusForbidden, "The teacher has locked this class to new joins")
+	case errors.Is(err, ErrClassFull):
+		utils.RespondError(c, http.StatusConflict, "Class is full. Maximum participant limit reached.")
 	default:
 		utils.RespondError(c, http.StatusInternalServerError, fallback)
 	}

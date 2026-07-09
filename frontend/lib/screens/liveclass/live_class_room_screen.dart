@@ -222,7 +222,13 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
         })
         ..on<lk.DataReceivedEvent>((event) => _handleDataReceived(event))
         ..on<lk.RoomDisconnectedEvent>((_) {
-          if (mounted) Navigator.of(context).pop();
+          // Auto Exit: a single pop() could land on an intermediate
+          // screen (e.g. the Waiting Room) instead of the Live Classes
+          // list. Popping all the way back to the first route in this
+          // flow guarantees the student always lands back on Live
+          // Classes automatically, whether the teacher ended the class
+          // or the connection simply dropped.
+          if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
         });
 
       _fallbackRebuildTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1270,7 +1276,26 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
         Positioned.fill(
           child: Container(
             color: Colors.black,
-            child: track != null ? lk.VideoTrackRenderer(track) : const Center(child: CircularProgressIndicator(color: Colors.white54)),
+            // Fix: never render the local user's OWN screen-share track
+            // back to themselves. With "Entire Screen" capture, doing so
+            // recaptures the app showing that same video, creating an
+            // infinite recursive mirror. Other participants still see
+            // the real VideoTrackRenderer normally - only the sharer's
+            // own view is replaced with a static placeholder.
+            child: isMe
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.screen_share_rounded, color: Colors.white54, size: 48),
+                        SizedBox(height: 12),
+                        Text('You are presenting your screen', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                        SizedBox(height: 4),
+                        Text('Other participants can see your shared screen', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
+                    ),
+                  )
+                : (track != null ? lk.VideoTrackRenderer(track) : const Center(child: CircularProgressIndicator(color: Colors.white54))),
           ),
         ),
         Positioned(

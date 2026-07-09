@@ -125,7 +125,7 @@ func (r *Repository) SaveAttempt(userID int, lessonID, subjectID *int, topic str
 				(attempt_id, question_index, question_type, question_text, options,
 				 selected_option, correct_option, correct_options, selected_options,
 				 submitted_text, correct_text, hint, explanation, difficulty_score, is_correct)
-			VALUES ($1, $2, $3, $4, COALESCE($5, '[]'), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			VALUES ($1, $2, $3, $4, COALESCE($5, '[]'::jsonb), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 			attemptID, a.QuestionIndex, questionType, a.QuestionText, optionsJSON,
 			a.SelectedOption, a.CorrectOption, correctOptionsJSON, selectedOptionsJSON,
 			a.SubmittedText, a.CorrectText, a.Hint, a.Explanation, nullIfZero(a.DifficultyScore), a.IsCorrect,

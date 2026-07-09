@@ -89,3 +89,25 @@ func (r *Repository) GetClassSection(studentID int) (class, section string, err 
 	err = r.db.QueryRow(`SELECT class, section FROM users WHERE id = $1`, studentID).Scan(&classVal, &sectionVal)
 	return classVal.String, sectionVal.String, err
 }
+
+// ListStudentsWithClassSection powers the admin's student-management
+// list - so an admin can see who to assign a class/section to.
+func (r *Repository) ListStudentsWithClassSection() ([]StudentWithClassSection, error) {
+	rows, err := r.db.Query(`
+		SELECT id, name, email, COALESCE(class, ''), COALESCE(section, '')
+		FROM users WHERE role = 'student' ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []StudentWithClassSection
+	for rows.Next() {
+		var s StudentWithClassSection
+		if err := rows.Scan(&s.ID, &s.Name, &s.Email, &s.Class, &s.Section); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}

@@ -269,7 +269,10 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: _statusColor(c.status).withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
-                child: Text(c.status, style: TextStyle(color: _statusColor(c.status), fontSize: 10, fontWeight: FontWeight.w700)),
+                child: Text(
+                  c.status == 'completed' ? 'Class Ended' : c.status[0].toUpperCase() + c.status.substring(1),
+                  style: TextStyle(color: _statusColor(c.status), fontSize: 10, fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),

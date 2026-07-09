@@ -18,6 +18,7 @@ import (
 	"ai-tutor-backend/internal/leaderboard"
 	"ai-tutor-backend/internal/auth"
 	"ai-tutor-backend/internal/categories"
+	"ai-tutor-backend/internal/certificate"
 	"ai-tutor-backend/internal/enrollment"
 	"ai-tutor-backend/internal/liveclass"
 	"ai-tutor-backend/internal/livekit"
@@ -97,6 +98,10 @@ func main() {
 	leaderboardRepo := leaderboard.NewRepository(db)
 	leaderboardService := leaderboard.NewService(leaderboardRepo, usersRepo)
 	leaderboardHandler := leaderboard.NewHandler(leaderboardService)
+
+	certRepo := certificate.NewRepository(db)
+	certService := certificate.NewService(certRepo)
+	certHandler := certificate.NewHandler(certService)
 	streakHandler := streak.NewHandler(streakService)
 
 	// --- Student Enrollment: auto-enrolled on lesson completion, gates
@@ -110,7 +115,7 @@ func main() {
 	adminHandler := admin.NewHandler(adminService)
 
 	progressRepo := progress.NewRepository(db)
-	progressService := progress.NewService(progressRepo, streakService, enrollmentService, badgeService, xpService)
+	progressService := progress.NewService(progressRepo, streakService, enrollmentService, badgeService, xpService, certService)
 	progressHandler := progress.NewHandler(progressService)
 
 	aiContentRepo := aicontent.NewRepository(db)
@@ -162,7 +167,7 @@ func main() {
 
 	// --- Quiz & Assessment: persisted attempts, results, analytics, AI quiz generator ---
 	quizRepo := quiz.NewRepository(db)
-	quizService := quiz.NewService(quizRepo, groqClient, streakService, badgeService, xpService)
+	quizService := quiz.NewService(quizRepo, groqClient, streakService, badgeService, xpService, certService)
 	quizHandler := quiz.NewHandler(quizService)
 
 	// --- Health checks (unchanged) ---
@@ -201,6 +206,7 @@ func main() {
 	badgeHandler.RegisterRoutes(api, authMiddleware)
 	xpHandler.RegisterRoutes(api, authMiddleware)
 	leaderboardHandler.RegisterRoutes(api, authMiddleware)
+	certHandler.RegisterRoutes(api, authMiddleware)
 	admin.RegisterRoutes(api, adminHandler, authMiddleware, middleware.RequireAdmin())
 	assignment.RegisterRoutes(api, assignmentHandler, authMiddleware, middleware.RequireTeacher())
 	assignment.RegisterSubjectRoute(api, assignmentHandler, authMiddleware)

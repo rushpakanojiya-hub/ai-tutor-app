@@ -48,3 +48,7 @@ func (s *Service) ChangePassword(userID int, req ChangePasswordRequest) error {
 func (s *Service) AssignClassSection(studentID int, req AssignClassSectionRequest) error {
 	return s.repo.AssignClassSection(studentID, req.Class, req.Section)
 }
+
+func (s *Service) ListStudents() ([]StudentWithClassSection, error) {
+	return s.repo.ListStudentsWithClassSection()
+}

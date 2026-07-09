@@ -7,13 +7,25 @@ class ApiConstants {
   /// - Physical device / real backend: replace with your machine's LAN IP
   ///   or your deployed Render URL, e.g. https://your-app.onrender.com
   /// - iOS simulator: use http://localhost:8080
-  static const String baseUrl = 'http://192.168.1.27:8080/api';
+  static const String baseUrl = 'http://192.168.1.36:8080/api';
 
   // --- Day 1: Auth ---
   static const String register = '/auth/register';
   static const String badgesMine = '/badges/mine';
   static String badgesForStudent(int studentId) => '/badges/student/$studentId';
   static const String xpMine = '/xp/mine';
+  static String leaderboard({String period = 'overall', String? classFilter, String? section}) {
+    var path = '/leaderboard?period=$period';
+    if (classFilter != null && classFilter.isNotEmpty) path += '&class=$classFilter';
+    if (section != null && section.isNotEmpty) path += '&section=$section';
+    return path;
+  }
+  static String assignClassSection(int studentId) => '/admin/students/$studentId/class-section';
+  static const String adminStudents = '/admin/students';
+  static const String certificatesMine = '/certificates/mine';
+  static const String certificatesTeacher = '/certificates/teacher';
+  static const String certificatesAll = '/certificates/all';
+  static String certificate(int id) => '/certificates/$id';
   static const String teacherApply = '/auth/teacher/apply';
   static const String login = '/auth/login';
   static const String profile = '/auth/profile';

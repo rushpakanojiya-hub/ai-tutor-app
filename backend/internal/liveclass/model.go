@@ -5,7 +5,10 @@
 // purpose - they'd be dead buttons without real video behind them.
 package liveclass
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 const (
 	StatusScheduled = "scheduled"
@@ -16,30 +19,34 @@ const (
 	StatusMissed = "missed"
 )
 
+// ErrClassFull is returned by Join once the live room already has
+// max_students participants connected.
+var ErrClassFull = errors.New("class is full. maximum participant limit reached")
+
 type LiveClass struct {
-	ID              int       `json:"id"`
-	TeacherID       int       `json:"teacher_id"`
-	TeacherName     string    `json:"teacher_name,omitempty"`
-	SubjectID       *int      `json:"subject_id"`
-	SubjectName     string    `json:"subject_name,omitempty"`
-	LessonID        *int      `json:"lesson_id"`
-	LessonTitle     string    `json:"lesson_title,omitempty"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	ClassDate       string    `json:"class_date"` // YYYY-MM-DD
-	StartTime       string    `json:"start_time"` // HH:MM
-	EndTime         string    `json:"end_time"`   // HH:MM
-	MaxStudents     *int      `json:"max_students"`
-	IsPublic        bool      `json:"is_public"`
-	HasPassword     bool      `json:"has_password"`
-	RecordClass     bool      `json:"record_class"`
-	Status          string    `json:"status"` // scheduled | completed | cancelled | missed (computed)
-	RoomName        string    `json:"room_name,omitempty"`
-	MeetingStatus   string    `json:"meeting_status"` // not_started | live | ended
-	Locked          bool      `json:"locked"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	EndedAt         *time.Time `json:"ended_at,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID            int        `json:"id"`
+	TeacherID     int        `json:"teacher_id"`
+	TeacherName   string     `json:"teacher_name,omitempty"`
+	SubjectID     *int       `json:"subject_id"`
+	SubjectName   string     `json:"subject_name,omitempty"`
+	LessonID      *int       `json:"lesson_id"`
+	LessonTitle   string     `json:"lesson_title,omitempty"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description"`
+	ClassDate     string     `json:"class_date"` // YYYY-MM-DD
+	StartTime     string     `json:"start_time"` // HH:MM
+	EndTime       string     `json:"end_time"`   // HH:MM
+	MaxStudents   *int       `json:"max_students"`
+	IsPublic      bool       `json:"is_public"`
+	HasPassword   bool       `json:"has_password"`
+	RecordClass   bool       `json:"record_class"`
+	Status        string     `json:"status"` // scheduled | completed | cancelled | missed (computed)
+	RoomName      string     `json:"room_name,omitempty"`
+	MeetingStatus string     `json:"meeting_status"` // not_started | live | ended
+	Locked        bool       `json:"locked"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	EndedAt       *time.Time `json:"ended_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // Meeting status - separate from the schedule Status above; tracks the
@@ -65,6 +72,8 @@ type JoinResponse struct {
 	RoomName string `json:"room_name"`
 }
 
+// CreateRequest - MaxStudents is now required (min 1): a teacher must
+// explicitly set a capacity before a class can be scheduled at all.
 type CreateRequest struct {
 	SubjectID       int    `json:"subject_id" binding:"required"`
 	LessonID        int    `json:"lesson_id"`
@@ -73,7 +82,7 @@ type CreateRequest struct {
 	ClassDate       string `json:"class_date" binding:"required"` // YYYY-MM-DD
 	StartTime       string `json:"start_time" binding:"required"` // HH:MM
 	EndTime         string `json:"end_time" binding:"required"`   // HH:MM
-	MaxStudents     int    `json:"max_students"`
+	MaxStudents     int    `json:"max_students" binding:"required,min=1"`
 	IsPublic        bool   `json:"is_public"`
 	MeetingPassword string `json:"meeting_password"`
 	RecordClass     bool   `json:"record_class"`
@@ -119,7 +128,6 @@ type AttendanceSummary struct {
 	Percentage            float64 `json:"percentage"`
 }
 
-// ParticipantActionRequest is the body for mute/remove endpoints -
 // identity matches the LiveKit participant identity ("teacher-{id}" or
 // "student-{id}"), not our own numeric user IDs.
 type ParticipantActionRequest struct {

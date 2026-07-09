@@ -28,3 +28,14 @@ type AssignClassSectionRequest struct {
 	Class   string `json:"class"`
 	Section string `json:"section"`
 }
+
+// StudentWithClassSection is one row for the admin's student-management
+// list - shows current class/section (if any) so the admin can assign
+// or update them.
+type StudentWithClassSection struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Class   string `json:"class,omitempty"`
+	Section string `json:"section,omitempty"`
+}

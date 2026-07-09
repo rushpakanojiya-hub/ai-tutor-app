@@ -29,6 +29,7 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup, authMiddleware gin.Han
 	adminGroup := router.Group("/admin/students")
 	adminGroup.Use(authMiddleware)
 	{
+		adminGroup.GET("", h.ListStudents)
 		adminGroup.PUT("/:id/class-section", h.AssignClassSection)
 	}
 }
@@ -67,6 +68,21 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Password changed successfully", nil)
+}
+
+// ListStudents handles GET /api/admin/students - admin-only.
+func (h *Handler) ListStudents(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "admin" {
+		utils.RespondError(c, http.StatusForbidden, "Only admins can view the student list")
+		return
+	}
+	students, err := h.service.ListStudents()
+	if err != nil {
+		utils.RespondError(c, http.StatusInternalServerError, "Failed to load students")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Students fetched", students)
 }
 
 // AssignClassSection handles PUT /api/admin/students/:id/class-section -

@@ -6,7 +6,7 @@ import '../../models/subject_model.dart';
 import '../../services/live_class_service.dart';
 import '../../services/subject_service.dart';
 
-/// Teacher schedules a class - date/time/subject/settings only. No
+/// Teacher schedules a class - date/time/subject/capacity only. No
 /// "Start Class" here since there's no video backend yet.
 class CreateLiveClassScreen extends StatefulWidget {
   const CreateLiveClassScreen({super.key});
@@ -22,15 +22,12 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _maxStudentsController = TextEditingController();
-  final _passwordController = TextEditingController();
 
   List<SubjectModel> _subjects = [];
   int? _selectedSubjectId;
   DateTime _date = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 11, minute: 0);
-  bool _isPublic = true;
-  bool _recordClass = false;
   bool _loadingSubjects = true;
   bool _saving = false;
   String? _error;
@@ -57,6 +54,12 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
       return;
     }
 
+    final maxStudents = int.tryParse(_maxStudentsController.text.trim());
+    if (maxStudents == null || maxStudents < 1) {
+      setState(() => _error = 'Maximum Students is required and must be a valid number.');
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -70,10 +73,7 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
         classDate: _fmtDate(_date),
         startTime: _fmtTime(_startTime),
         endTime: _fmtTime(_endTime),
-        maxStudents: int.tryParse(_maxStudentsController.text),
-        isPublic: _isPublic,
-        meetingPassword: _passwordController.text.trim(),
-        recordClass: _recordClass,
+        maxStudents: maxStudents,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Class scheduled.')));
@@ -91,7 +91,6 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _maxStudentsController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -175,28 +174,12 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          _card(title: 'Max Students (optional)', child: TextField(controller: _maxStudentsController, keyboardType: TextInputType.number, decoration: const InputDecoration(border: OutlineInputBorder()))),
-          const SizedBox(height: 14),
-          _card(title: 'Meeting Password (optional)', child: TextField(controller: _passwordController, decoration: const InputDecoration(border: OutlineInputBorder()))),
-          const SizedBox(height: 14),
           _card(
-            title: 'Settings',
-            child: Column(
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Public (visible to all students)', style: TextStyle(fontSize: 13)),
-                  value: _isPublic,
-                  onChanged: (v) => setState(() => _isPublic = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Record this class', style: TextStyle(fontSize: 13)),
-                  subtitle: const Text('Recording upload isn\'t available yet - this just notes your intent.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                  value: _recordClass,
-                  onChanged: (v) => setState(() => _recordClass = v),
-                ),
-              ],
+            title: 'Maximum Students *',
+            child: TextField(
+              controller: _maxStudentsController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Required'),
             ),
           ),
           if (_error != null) ...[

@@ -1,6 +1,7 @@
 package quiz
 
 import (
+	"log"
 	"errors"
 	"net/http"
 	"strconv"
@@ -63,6 +64,7 @@ func (h *Handler) SubmitFreeformAttempt(c *gin.Context) {
 
 	result, err := h.service.SubmitFreeformAttempt(userID, req)
 	if err != nil {
+		log.Printf("[DEBUG] SubmitFreeformAttempt error: %v", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to submit quiz attempt")
 		return
 	}

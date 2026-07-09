@@ -10,6 +10,7 @@ import (
 
 	"ai-tutor-backend/internal/ai"
 	"ai-tutor-backend/internal/badge"
+	"ai-tutor-backend/internal/certificate"
 	"ai-tutor-backend/internal/streak"
 	"ai-tutor-backend/internal/xp"
 )
@@ -34,12 +35,13 @@ type Service struct {
 	streakSvc  *streak.Service
 	badgeSvc   *badge.Service
 	xpSvc      *xp.Service
+	certSvc    *certificate.Service
 }
 
 // NewService wires a Repository, the shared GroqClient, the shared
 // streak Service, and the shared badge Service into a quiz Service.
-func NewService(repo *Repository, groqClient *ai.GroqClient, streakSvc *streak.Service, badgeSvc *badge.Service, xpSvc *xp.Service) *Service {
-	return &Service{repo: repo, groqClient: groqClient, streakSvc: streakSvc, badgeSvc: badgeSvc, xpSvc: xpSvc}
+func NewService(repo *Repository, groqClient *ai.GroqClient, streakSvc *streak.Service, badgeSvc *badge.Service, xpSvc *xp.Service, certSvc *certificate.Service) *Service {
+	return &Service{repo: repo, groqClient: groqClient, streakSvc: streakSvc, badgeSvc: badgeSvc, xpSvc: xpSvc, certSvc: certSvc}
 }
 
 // SubmitLessonAttempt grades a lesson-based quiz attempt server-side
@@ -91,6 +93,7 @@ func (s *Service) SubmitLessonAttempt(userID, lessonID int, req SubmitLessonAtte
 	go s.badgeSvc.CheckAndAwardBadges(userID)
 	go s.xpSvc.AwardQuizCompletion(userID, attemptID)
 	go s.xpSvc.OnStudyActivity(userID)
+	go s.certSvc.CheckAndGenerate(userID, subjectID)
 
 	return s.repo.GetAttemptWithAnswers(userID, attemptID)
 }
@@ -147,6 +150,9 @@ func (s *Service) SubmitFreeformAttempt(userID int, req SubmitFreeformAttemptReq
 	go s.badgeSvc.CheckAndAwardBadges(userID)
 	go s.xpSvc.AwardQuizCompletion(userID, attemptID)
 	go s.xpSvc.OnStudyActivity(userID)
+	if req.SubjectID != nil {
+		go s.certSvc.CheckAndGenerate(userID, *req.SubjectID)
+	}
 	return s.repo.GetAttemptWithAnswers(userID, attemptID)
 }
 

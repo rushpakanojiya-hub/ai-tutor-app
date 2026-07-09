@@ -25,6 +25,11 @@ func NewService(repo *Repository, notificationSvc *notification.Service, tokenSv
 }
 
 func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
+	// The "Public" toggle has been removed from the schedule form - every
+	// class stays visible to students by default (unchanged existing
+	// behavior), regardless of what the client sends for this field.
+	req.IsPublic = true
+
 	id, err := s.repo.Create(teacherID, req)
 	if err != nil {
 		return 0, err
@@ -158,6 +163,27 @@ func (s *Service) Join(classID, studentID int) (*JoinResponse, error) {
 		return nil, ErrRoomLocked
 	}
 
+	if class.MaxStudents != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		participants, err := s.roomClient.ListParticipants(ctx, class.RoomName)
+		cancel()
+		if err == nil {
+			teacherIdentity := fmt.Sprintf("teacher-%d", class.TeacherID)
+			studentCount := 0
+			for _, p := range participants {
+				if p.Identity != teacherIdentity {
+					studentCount++
+				}
+			}
+			if studentCount >= *class.MaxStudents {
+				return nil, ErrClassFull
+			}
+		}
+		// If the LiveKit call itself fails, we deliberately don't block the
+		// join on that - the capacity check is a nice-to-have, not a
+		// reason to hard-fail joining over an unrelated infra hiccup.
+	}
+
 	studentName, _ := s.repo.GetUserName(studentID)
 	token, err := s.tokenSvc.GenerateToken(class.RoomName, fmt.Sprintf("student-%d", studentID), studentName, false)
 	if err != nil {
@@ -185,7 +211,19 @@ func (s *Service) End(classID, teacherID int) error {
 		_ = s.roomClient.EndRoom(ctx, class.RoomName) // best-effort - still mark ended even if this fails
 	}
 
-	return s.repo.SetMeetingEnded(classID, teacherID)
+	if err := s.repo.SetMeetingEnded(classID, teacherID); err != nil {
+		return err
+	}
+
+	// meeting_status and status (scheduled/completed) are separate
+	// columns - without also completing the schedule status here, the
+	// class stayed in "Upcoming" (Join/I'm Present buttons still shown)
+	// forever after the meeting genuinely ended. Ending the meeting is
+	// exactly the "class is done" signal - it should always land in
+	// Past Classes, so a teacher never needs a second manual step, and
+	// this ALSO doubles as the "teacher cannot reopen the same meeting"
+	// guard (Start() already refuses once status leaves 'scheduled').
+	return s.repo.SetStatus(classID, teacherID, StatusCompleted)
 }
 
 func (s *Service) GetMeetingStatus(classID int) (string, error) {

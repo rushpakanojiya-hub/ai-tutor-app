@@ -7,9 +7,12 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import 'edit_profile_screen.dart';
 import '../badges/my_badges_screen.dart';
+import '../leaderboard/leaderboard_screen.dart';
+import '../leaderboard/manage_students_screen.dart';
+import '../certificates/my_certificates_screen.dart';
 
 /// Profile tab: shows the logged-in user's info and a logout button.
-/// UI redesign only Ã¢â‚¬â€ AuthProvider.logout() and the navigation after it
+/// UI redesign only â€” AuthProvider.logout() and the navigation after it
 /// are exactly what they were before.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -80,6 +83,13 @@ class ProfileScreen extends StatelessWidget {
             label: 'AI Quiz Generator',
             onTap: () => context.push('/ai-quiz-generator'),
           ).animate().fadeIn(duration: 250.ms, delay: 145.ms),
+          _ProfileMenuTile(
+            icon: Icons.leaderboard_rounded,
+            label: 'Leaderboard',
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const LeaderboardScreen()));
+            },
+          ).animate().fadeIn(duration: 250.ms, delay: 130.ms),
           if (auth.currentUser?.role == 'student') ...[
             const SizedBox(height: 12),
             _ProfileMenuTile(
@@ -95,6 +105,14 @@ class ProfileScreen extends StatelessWidget {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const MyBadgesScreen()));
               },
             ).animate().fadeIn(duration: 250.ms, delay: 160.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.workspace_premium_rounded,
+              label: 'My Certificates',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const MyCertificatesScreen()));
+              },
+            ).animate().fadeIn(duration: 250.ms, delay: 165.ms),
           ],
           if (auth.currentUser?.role == 'teacher') ...[
             const SizedBox(height: 12),
@@ -117,6 +135,22 @@ class ProfileScreen extends StatelessWidget {
               label: 'Admin Panel',
               onTap: () => context.push('/admin-dashboard'),
             ).animate().fadeIn(duration: 250.ms, delay: 150.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.groups_rounded,
+              label: 'Manage Students',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageStudentsScreen()));
+              },
+            ).animate().fadeIn(duration: 250.ms, delay: 155.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.workspace_premium_rounded,
+              label: 'All Certificates',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const MyCertificatesScreen(mode: CertificateListMode.admin)));
+              },
+            ).animate().fadeIn(duration: 250.ms, delay: 156.ms),
           ],
           const SizedBox(height: 12),
           _ProfileMenuTile(
