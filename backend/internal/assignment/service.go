@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"ai-tutor-backend/internal/ai"
+	"ai-tutor-backend/internal/badge"
 	"ai-tutor-backend/internal/streak"
+	"ai-tutor-backend/internal/xp"
 	"ai-tutor-backend/internal/subjects"
 )
 
@@ -17,10 +19,12 @@ type Service struct {
 	subjectsRepo *subjects.Repository
 	groqClient   *ai.GroqClient
 	streakSvc    *streak.Service
+	badgeSvc     *badge.Service
+	xpSvc        *xp.Service
 }
 
-func NewService(repo *Repository, subjectsRepo *subjects.Repository, groqClient *ai.GroqClient, streakSvc *streak.Service) *Service {
-	return &Service{repo: repo, subjectsRepo: subjectsRepo, groqClient: groqClient, streakSvc: streakSvc}
+func NewService(repo *Repository, subjectsRepo *subjects.Repository, groqClient *ai.GroqClient, streakSvc *streak.Service, badgeSvc *badge.Service, xpSvc *xp.Service) *Service {
+	return &Service{repo: repo, subjectsRepo: subjectsRepo, groqClient: groqClient, streakSvc: streakSvc, badgeSvc: badgeSvc, xpSvc: xpSvc}
 }
 
 // --- Teacher: CRUD ---
@@ -41,9 +45,6 @@ func (s *Service) Publish(assignmentID, teacherID int) error {
 	return s.repo.SetStatus(assignmentID, teacherID, StatusPublished)
 }
 
-// Unpublish is only allowed if no student has submitted yet - once real
-// activity exists, the teacher should Close (stop new submissions,
-// keep it visible/gradable) or Archive instead.
 func (s *Service) Unpublish(assignmentID, teacherID int) error {
 	hasSubs, err := s.repo.HasSubmissions(assignmentID)
 	if err != nil {
@@ -55,9 +56,6 @@ func (s *Service) Unpublish(assignmentID, teacherID int) error {
 	return s.repo.SetStatus(assignmentID, teacherID, StatusUnpublished)
 }
 
-// Close stops an assignment from accepting new submissions while keeping
-// it (and its existing submissions/analytics) visible - the step between
-// Published and Archived.
 func (s *Service) Close(assignmentID, teacherID int) error {
 	return s.repo.SetStatus(assignmentID, teacherID, StatusClosed)
 }
@@ -148,10 +146,6 @@ func (s *Service) SaveDraft(assignmentID, studentID int, text string) error {
 	return s.repo.UpsertDraft(assignmentID, studentID, text)
 }
 
-// Submit finalizes the submission and immediately runs AI auto-evaluation
-// (real Groq call, not a placeholder), then records the activity for the
-// Learning Streak - the closest honest equivalent of "progress update"
-// this app can support today without a dedicated assignment-progress model.
 var ErrAssignmentNotOpen = fmt.Errorf("this assignment is no longer accepting submissions")
 
 func (s *Service) Submit(ctx context.Context, assignmentID, studentID int, text string) (*Submission, error) {
@@ -169,20 +163,17 @@ func (s *Service) Submit(ctx context.Context, assignmentID, studentID int, text 
 	}
 
 	if err := s.evaluateWithAI(ctx, submissionID, assignmentDetail, text); err != nil {
-		// The submission is saved either way - evaluation failing shouldn't
-		// lose the student's work. Logged so it's diagnosable, and the
-		// student can retry via RetryEvaluation.
 		log.Printf("[assignment] AI evaluation failed for submission %d: %v", submissionID, err)
 	} else {
 		_ = s.streakSvc.RecordActivity(studentID) // best-effort
+		go s.xpSvc.OnStudyActivity(studentID)
 	}
+	go s.badgeSvc.CheckAndAwardBadges(studentID)
+	go s.xpSvc.AwardHomeworkSubmission(studentID, submissionID)
 
 	return s.repo.GetSubmissionByID(submissionID)
 }
 
-// RetryEvaluation re-runs AI evaluation for a submission that never got
-// evaluated (e.g. a transient Groq/JSON failure on first submit).
-// Ownership-checked: a student can only retry their own submission.
 func (s *Service) RetryEvaluation(ctx context.Context, submissionID, studentID int) (*Submission, error) {
 	sub, err := s.repo.GetSubmissionByID(submissionID)
 	if err != nil {

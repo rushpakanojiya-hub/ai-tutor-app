@@ -31,8 +31,6 @@ func parseOptionalTime(s string) *time.Time {
 	return &t
 }
 
-// CreateAssignment inserts the assignment and its subject target in one
-// transaction.
 func (r *Repository) CreateAssignment(teacherID int, req CreateAssignmentRequest) (int, error) {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -87,7 +85,6 @@ func maxMarksOrDefault(n int) int {
 	return n
 }
 
-// checkOwnership verifies the assignment exists and belongs to teacherID.
 func (r *Repository) checkOwnership(assignmentID, teacherID int) error {
 	var ownerID int
 	err := r.db.QueryRow(`SELECT teacher_id FROM assignments WHERE id = $1`, assignmentID).Scan(&ownerID)
@@ -103,8 +100,6 @@ func (r *Repository) checkOwnership(assignmentID, teacherID int) error {
 	return nil
 }
 
-// UpdateAssignment applies only the provided (non-nil) fields, after
-// verifying ownership.
 func (r *Repository) UpdateAssignment(assignmentID, teacherID int, req UpdateAssignmentRequest) error {
 	if err := r.checkOwnership(assignmentID, teacherID); err != nil {
 		return err
@@ -152,8 +147,6 @@ func (r *Repository) DeleteAssignment(assignmentID, teacherID int) error {
 	return err
 }
 
-// HasSubmissions reports whether any student has submitted (or drafted)
-// against this assignment - used to block Unpublish once real activity exists.
 func (r *Repository) HasSubmissions(assignmentID int) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM assignment_submissions WHERE assignment_id = $1 AND status != 'draft')`, assignmentID).Scan(&exists)
@@ -180,10 +173,6 @@ const assignmentSelect = `
 	LEFT JOIN subjects s ON s.id = t.target_id
 `
 
-// assignmentSelectForStudent additionally selects that student's own
-// submission status (or 'not_started' if none exists) - used only by the
-// two student-facing list queries below. $N below is always the
-// student_id parameter - callers must pass it as the query's last arg.
 func assignmentSelectForStudent(studentIDPlaceholder string) string {
 	return `
 	SELECT a.id, a.teacher_id, u.name, t.target_id, s.name,
@@ -256,10 +245,6 @@ func (r *Repository) ListForTeacher(teacherID int) ([]Assignment, error) {
 	return scanAssignmentRows(rows)
 }
 
-// ListPublishedForSubject returns published assignments targeting a
-// subject - what students see on that subject's page. Only enrolled
-// students see anything (see internal/enrollment - a student is enrolled
-// automatically once they complete any lesson in the subject).
 func (r *Repository) ListPublishedForSubject(subjectID, studentID int) ([]Assignment, error) {
 	rows, err := r.db.Query(assignmentSelectForStudent("$2")+`
 		WHERE t.target_type = 'subject' AND t.target_id = $1 AND a.status = 'published'
@@ -280,15 +265,6 @@ func (r *Repository) ListPublishedForSubject(subjectID, studentID int) ([]Assign
 	return result, rows.Err()
 }
 
-// ListPublishedForStudent returns every published assignment across every
-// subject the student is enrolled in - powers the dedicated Assignments
-// tab and the Home dashboard "New Assignment" card, so a student doesn't
-// have to dig through Course -> Subject -> Lesson to find one.
-// ListPublishedForStudent returns every published assignment across every
-// subject - powers the dedicated Assignments tab and the Home dashboard
-// "New Assignment" card. No enrollment restriction: every student can
-// already see every subject's lessons in this app, so assignments follow
-// the same open-access model.
 func (r *Repository) ListPublishedForStudent(studentID int) ([]Assignment, error) {
 	rows, err := r.db.Query(assignmentSelectForStudent("$1")+`
 		WHERE t.target_type = 'subject' AND a.status = 'published'
@@ -309,7 +285,6 @@ func (r *Repository) ListPublishedForStudent(studentID int) ([]Assignment, error
 	return result, rows.Err()
 }
 
-// ListAllForAdmin returns every assignment platform-wide, for monitoring.
 func (r *Repository) ListAllForAdmin() ([]Assignment, error) {
 	rows, err := r.db.Query(assignmentSelect + ` ORDER BY a.created_at DESC`)
 	if err != nil {
@@ -319,8 +294,6 @@ func (r *Repository) ListAllForAdmin() ([]Assignment, error) {
 	return scanAssignmentRows(rows)
 }
 
-// GetTargetSubjectID returns the subject this assignment targets
-// (Phase 1: always exactly one subject target).
 func (r *Repository) GetTargetSubjectID(assignmentID int) (int, error) {
 	var subjectID int
 	err := r.db.QueryRow(`
@@ -329,8 +302,6 @@ func (r *Repository) GetTargetSubjectID(assignmentID int) (int, error) {
 	return subjectID, err
 }
 
-// GetEnrolledStudentIDs returns every student enrolled in a subject - the
-// fan-out list for "new assignment published" notifications.
 func (r *Repository) GetEnrolledStudentIDs(subjectID int) ([]int, error) {
 	rows, err := r.db.Query(`SELECT student_id FROM subject_enrollments WHERE subject_id = $1`, subjectID)
 	if err != nil {
@@ -349,18 +320,12 @@ func (r *Repository) GetEnrolledStudentIDs(subjectID int) ([]int, error) {
 	return ids, nil
 }
 
-// GetSubmissionStudentID is used to know who to notify after a teacher review.
 func (r *Repository) GetSubmissionStudentID(submissionID int) (int, error) {
 	var studentID int
 	err := r.db.QueryRow(`SELECT student_id FROM assignment_submissions WHERE id = $1`, submissionID).Scan(&studentID)
 	return studentID, err
 }
 
-// ListForStudent returns every published assignment across every subject
-// the student is enrolled in, with their own submission status attached -
-// so the student doesn't have to dig through Course -> Subject -> Lesson
-// to find assignments (Home dashboard and a dedicated Assignments tab
-// both use this).
 func (r *Repository) ListForStudent(studentID int) ([]Assignment, error) {
 	rows, err := r.db.Query(assignmentSelect+`
 		WHERE t.target_type = 'subject' AND a.status IN ('published', 'closed')
@@ -375,7 +340,6 @@ func (r *Repository) ListForStudent(studentID int) ([]Assignment, error) {
 		return nil, err
 	}
 
-	// Attach each assignment's status for THIS student (pending/submitted/evaluated/etc).
 	for i := range assignments {
 		var status sql.NullString
 		_ = r.db.QueryRow(`SELECT status FROM assignment_submissions WHERE assignment_id = $1 AND student_id = $2`,
@@ -400,8 +364,6 @@ func scanAssignmentRows(rows *sql.Rows) ([]Assignment, error) {
 
 // --- Submissions ---
 
-// UpsertDraft creates or updates a student's draft submission (one row
-// per assignment+student, enforced by a UNIQUE constraint).
 func (r *Repository) UpsertDraft(assignmentID, studentID int, text string) error {
 	_, err := r.db.Exec(`
 		INSERT INTO assignment_submissions (assignment_id, student_id, submission_text, status)
@@ -415,8 +377,6 @@ func (r *Repository) UpsertDraft(assignmentID, studentID int, text string) error
 	return err
 }
 
-// SubmitFinal marks the submission as submitted (locking it in), text
-// included, and returns its ID.
 func (r *Repository) SubmitFinal(assignmentID, studentID int, text string) (int, error) {
 	var id int
 	err := r.db.QueryRow(`
@@ -463,8 +423,6 @@ func scanSubmissionWithEval(r *Repository, row *sql.Row) (*Submission, error) {
 	return &s, nil
 }
 
-// ListSubmissionsForAssignment is for the teacher review queue -
-// verifies the assignment belongs to teacherID first.
 func (r *Repository) ListSubmissionsForAssignment(assignmentID, teacherID int) ([]Submission, error) {
 	if err := r.checkOwnership(assignmentID, teacherID); err != nil {
 		return nil, err
@@ -509,8 +467,8 @@ func (r *Repository) SaveAIEvaluation(submissionID, aiScore, maxScore int, stren
 	}
 
 	_, err := r.db.Exec(`
-		INSERT INTO assignment_evaluations (submission_id, ai_score, max_score, percentage, strengths, weaknesses, missing_concepts, suggestions, evaluated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+		INSERT INTO assignment_evaluations (submission_id, ai_score, max_score, percentage, strengths, weaknesses, missing_concepts, suggestions, teacher_feedback, evaluated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '', now())
 		ON CONFLICT (submission_id) DO UPDATE SET
 			ai_score = EXCLUDED.ai_score, max_score = EXCLUDED.max_score, percentage = EXCLUDED.percentage,
 			strengths = EXCLUDED.strengths, weaknesses = EXCLUDED.weaknesses, missing_concepts = EXCLUDED.missing_concepts,
@@ -525,12 +483,18 @@ func (r *Repository) SaveAIEvaluation(submissionID, aiScore, maxScore int, stren
 	return err
 }
 
+// GetEvaluationBySubmission - fixed: teacher_feedback (and a couple other
+// nullable-in-practice columns) are wrapped in COALESCE so a NULL there
+// (the normal case before a teacher ever reviews) no longer makes the
+// whole Scan fail and silently drop the entire evaluation from the API
+// response - that was the actual bug behind "Evaluation hasn't come
+// through yet" even though the row existed in the database all along.
 func (r *Repository) GetEvaluationBySubmission(submissionID int) (*Evaluation, error) {
 	var e Evaluation
 	var strengthsRaw, weaknessesRaw, missingRaw []byte
 	err := r.db.QueryRow(`
 		SELECT id, submission_id, ai_score, max_score, percentage, strengths, weaknesses, missing_concepts,
-		       suggestions, teacher_override_score, teacher_feedback, reviewed_by_teacher, evaluated_at
+		       COALESCE(suggestions, ''), teacher_override_score, COALESCE(teacher_feedback, ''), reviewed_by_teacher, evaluated_at
 		FROM assignment_evaluations WHERE submission_id = $1`, submissionID,
 	).Scan(&e.ID, &e.SubmissionID, &e.AIScore, &e.MaxScore, &e.Percentage, &strengthsRaw, &weaknessesRaw, &missingRaw,
 		&e.Suggestions, &e.TeacherOverrideScore, &e.TeacherFeedback, &e.ReviewedByTeacher, &e.EvaluatedAt)
@@ -549,8 +513,6 @@ func (r *Repository) GetEvaluationBySubmission(submissionID int) (*Evaluation, e
 	return &e, nil
 }
 
-// SaveTeacherReview verifies the submission's assignment belongs to
-// teacherID before allowing an override.
 func (r *Repository) SaveTeacherReview(submissionID, teacherID int, overrideScore *int, feedback string) error {
 	var assignmentID int
 	if err := r.db.QueryRow(`SELECT assignment_id FROM assignment_submissions WHERE id = $1`, submissionID).Scan(&assignmentID); err != nil {
@@ -576,7 +538,7 @@ func (r *Repository) SaveTeacherReview(submissionID, teacherID int, overrideScor
 	return err
 }
 
-// --- Analytics (teacher scoped or platform-wide for admin) ---
+// --- Analytics ---
 
 func (r *Repository) GetAnalytics(teacherID *int) (*AnalyticsOverview, error) {
 	overview := &AnalyticsOverview{}

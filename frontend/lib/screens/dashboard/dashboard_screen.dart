@@ -65,23 +65,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final pages = _pages(isStudent);
     if (_currentIndex >= pages.length) _currentIndex = 0;
 
-    return Scaffold(
-      backgroundColor: AppColors.pageBackground,
-      body: SafeArea(child: pages[_currentIndex]),
-      bottomNavigationBar: Container(
-        height: 72,
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, -4))],
-        ),
-        child: Row(
-          children: [
-            _navItem(0, Icons.home_outlined, Icons.home_rounded, 'Home'),
-            _navItem(1, Icons.menu_book_outlined, Icons.menu_book_rounded, 'Courses'),
-            if (isStudent) _navItem(2, Icons.assignment_outlined, Icons.assignment_rounded, 'Assignments'),
-            _navItem(isStudent ? 3 : 2, Icons.smart_toy_outlined, Icons.smart_toy_rounded, 'AI Tutor'),
-            _navItem(isStudent ? 4 : 3, Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
-          ],
+    return PopScope(
+      // Only governs this root bottom-nav shell. Nested pages pushed via
+      // Navigator (Edit Profile, a Lesson, AI Tutor Chat, an Assignment,
+      // etc.) are unaffected - they still pop normally since PopScope
+      // only intercepts back on THIS route, not routes pushed on top of it.
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return; // already on Home - let the app exit normally
+        setState(() => _currentIndex = 0);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.pageBackground,
+        body: SafeArea(child: pages[_currentIndex]),
+        bottomNavigationBar: Container(
+          height: 72,
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, -4))],
+          ),
+          child: Row(
+            children: [
+              _navItem(0, Icons.home_outlined, Icons.home_rounded, 'Home'),
+              _navItem(1, Icons.menu_book_outlined, Icons.menu_book_rounded, 'Courses'),
+              if (isStudent) _navItem(2, Icons.assignment_outlined, Icons.assignment_rounded, 'Assignments'),
+              _navItem(isStudent ? 3 : 2, Icons.smart_toy_outlined, Icons.smart_toy_rounded, 'AI Tutor'),
+              _navItem(isStudent ? 4 : 3, Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
+            ],
+          ),
         ),
       ),
     );

@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"ai-tutor-backend/internal/badge"
 	"ai-tutor-backend/internal/livekit"
 	"ai-tutor-backend/internal/notification"
 )
@@ -16,10 +17,11 @@ type Service struct {
 	tokenSvc        *livekit.TokenService
 	roomClient      *livekit.RoomClient
 	livekitURL      string
+	badgeSvc        *badge.Service
 }
 
-func NewService(repo *Repository, notificationSvc *notification.Service, tokenSvc *livekit.TokenService, roomClient *livekit.RoomClient, livekitURL string) *Service {
-	return &Service{repo: repo, notificationSvc: notificationSvc, tokenSvc: tokenSvc, roomClient: roomClient, livekitURL: livekitURL}
+func NewService(repo *Repository, notificationSvc *notification.Service, tokenSvc *livekit.TokenService, roomClient *livekit.RoomClient, livekitURL string, badgeSvc *badge.Service) *Service {
+	return &Service{repo: repo, notificationSvc: notificationSvc, tokenSvc: tokenSvc, roomClient: roomClient, livekitURL: livekitURL, badgeSvc: badgeSvc}
 }
 
 func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
@@ -57,8 +59,6 @@ func (s *Service) Cancel(classID, teacherID int) error {
 	return nil
 }
 
-// AdminCancel lets an admin cancel any class platform-wide, bypassing
-// the teacher-ownership check.
 func (s *Service) AdminCancel(classID int) error {
 	class, err := s.repo.GetByID(classID)
 	if err != nil {
@@ -105,8 +105,6 @@ func (s *Service) ListAllForAdmin() ([]LiveClass, error) {
 var ErrMeetingNotLive = fmt.Errorf("the teacher hasn't started this class yet")
 var ErrMeetingAlreadyEnded = fmt.Errorf("this class has already ended")
 
-// Start creates (or reuses) the LiveKit room, marks the class live, and
-// returns everything the teacher's Flutter app needs to connect.
 func (s *Service) Start(classID, teacherID int) (*StartResponse, error) {
 	class, err := s.repo.GetByID(classID)
 	if err != nil {
@@ -146,10 +144,6 @@ func (s *Service) Start(classID, teacherID int) (*StartResponse, error) {
 	return &StartResponse{Token: token, URL: s.livekitURL, RoomName: roomName}, nil
 }
 
-// Join validates the class is actually live, generates a student token,
-// and records a check-in (bypassing the schedule-window rule used by the
-// manual "I'm Present" button - actually joining the real call is a
-// stronger attendance signal than the honor-system button).
 var ErrRoomLocked = fmt.Errorf("the teacher has locked this class to new joins")
 
 func (s *Service) Join(classID, studentID int) (*JoinResponse, error) {
@@ -171,11 +165,11 @@ func (s *Service) Join(classID, studentID int) (*JoinResponse, error) {
 	}
 
 	_ = s.repo.CheckIn(classID, studentID, AttendancePresent) // best-effort, real join = present
+	go s.badgeSvc.CheckAndAwardBadges(studentID)
 
 	return &JoinResponse{Token: token, URL: s.livekitURL, RoomName: class.RoomName}, nil
 }
 
-// End closes the LiveKit room and marks the meeting ended.
 func (s *Service) End(classID, teacherID int) error {
 	class, err := s.repo.GetByID(classID)
 	if err != nil {
@@ -202,9 +196,7 @@ func (s *Service) GetMeetingStatus(classID int) (string, error) {
 	return class.MeetingStatus, nil
 }
 
-// --- Teacher moderation (needs LiveKit's server-side admin API - a
-// participant can never force-mute or remove another participant purely
-// from the client SDK) ---
+// --- Teacher moderation ---
 
 func (s *Service) MuteParticipant(classID, teacherID int, targetIdentity string) error {
 	class, err := s.repo.GetByID(classID)
@@ -253,9 +245,6 @@ func (s *Service) SetLocked(classID, teacherID int, locked bool) error {
 
 var ErrAttendanceWindowClosed = fmt.Errorf("check-in is only available during the scheduled class time")
 
-// CheckIn validates the class window (now must be between start and end
-// time on class_date) before recording attendance. Checking in within
-// the first 10 minutes counts as "present", after that as "late".
 func (s *Service) CheckIn(classID, studentID int) (string, error) {
 	class, err := s.repo.GetByID(classID)
 	if err != nil {
@@ -286,6 +275,7 @@ func (s *Service) CheckIn(classID, studentID int) (string, error) {
 	if err := s.repo.CheckIn(classID, studentID, status); err != nil {
 		return "", err
 	}
+	go s.badgeSvc.CheckAndAwardBadges(studentID)
 	return status, nil
 }
 

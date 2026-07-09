@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
+import 'edit_profile_screen.dart';
+import '../badges/my_badges_screen.dart';
 
 /// Profile tab: shows the logged-in user's info and a logout button.
-/// UI redesign only â€” AuthProvider.logout() and the navigation after it
+/// UI redesign only Ã¢â‚¬â€ AuthProvider.logout() and the navigation after it
 /// are exactly what they were before.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -63,9 +65,7 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.edit_outlined,
             label: 'Edit Profile',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Edit profile is coming in a later build')),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
             },
           ).animate().fadeIn(duration: 250.ms, delay: 100.ms),
           const SizedBox(height: 12),
@@ -87,6 +87,14 @@ class ProfileScreen extends StatelessWidget {
               label: 'Live Classes',
               onTap: () => context.push('/student-live-classes'),
             ).animate().fadeIn(duration: 250.ms, delay: 147.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.emoji_events_rounded,
+              label: 'My Badges',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const MyBadgesScreen()));
+              },
+            ).animate().fadeIn(duration: 250.ms, delay: 160.ms),
           ],
           if (auth.currentUser?.role == 'teacher') ...[
             const SizedBox(height: 12),

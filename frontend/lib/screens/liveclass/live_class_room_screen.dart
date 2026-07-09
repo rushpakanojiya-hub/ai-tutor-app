@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -498,13 +499,35 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
 
   // --- Screen Share (LiveKit built-in - no backend, just another track) ---
 
+  static const _screenShareChannel = MethodChannel('ai_tutor_app/screen_share');
+
   Future<void> _toggleScreenShare() async {
     try {
       final newState = !_screenSharing;
+
+      if (newState) {
+        // Must start BEFORE setScreenShareEnabled(true) - Android 14+
+        // kills the app if MediaProjection.start() is called without an
+        // active foregroundServiceType="mediaProjection" service running.
+        await _screenShareChannel.invokeMethod('startScreenShareService');
+      }
+
       await _room.localParticipant?.setScreenShareEnabled(newState);
+
+      if (!newState) {
+        await _screenShareChannel.invokeMethod('stopScreenShareService');
+      }
+
+      // ignore: avoid_print
+      print('[LiveClassRoom] Screen share toggled to $newState successfully');
       setState(() => _screenSharing = newState);
-    } catch (e) {
-      _showToast('Could not start screen sharing on this device.');
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('[LiveClassRoom] Screen share toggle failed: $e');
+      // ignore: avoid_print
+      print(stackTrace);
+      await _screenShareChannel.invokeMethod('stopScreenShareService').catchError((_) {});
+      _showToast('Could not ${_screenSharing ? "stop" : "start"} screen sharing on this device.');
     }
   }
 
@@ -933,6 +956,9 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
 
   @override
   void dispose() {
+    if (_screenSharing) {
+      _screenShareChannel.invokeMethod('stopScreenShareService').catchError((_) {});
+    }
     _fallbackRebuildTimer?.cancel();
     _endingSoonTimer?.cancel();
     _chatController.dispose();
@@ -1084,39 +1110,42 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
               top: 4,
               left: 12,
               right: 12,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(20)),
-                      child: Text(widget.classTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13), overflow: TextOverflow.ellipsis),
-                    ),
-                  ),
-                  if (_screenSharing) ...[
-                    const SizedBox(width: 8),
-                    Material(
+              child: _screenSharing
+                  ? Material(
                       color: AppColors.error,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(24),
+                      elevation: 4,
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                         onTap: _toggleScreenShare,
                         child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.stop_screen_share_rounded, color: Colors.white, size: 14),
-                              SizedBox(width: 4),
-                              Text('Stop Sharing', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                              Icon(Icons.screen_share_rounded, color: Colors.white, size: 20),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text('You are presenting your screen', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ),
+                              Icon(Icons.stop_circle_rounded, color: Colors.white, size: 20),
+                              SizedBox(width: 6),
+                              Text('Stop Sharing', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
                             ],
                           ),
                         ),
                       ),
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(20)),
+                            child: Text(widget.classTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13), overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ],
-              ),
             ),
 
             // --- Pinned announcements ---

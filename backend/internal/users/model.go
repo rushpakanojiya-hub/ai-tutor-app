@@ -11,5 +11,20 @@ type User struct {
 }
 
 type UpdateProfileRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name  string `json:"name" binding:"required"`
+	Email string `json:"email" binding:"required,email"`
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required"`
+}
+
+// AssignClassSectionRequest is the body for the admin-only
+// PUT /api/admin/students/:id/class-section - used only for Leaderboard
+// filtering, nowhere else. Students cannot set these themselves - there
+// is no student-facing endpoint for this.
+type AssignClassSectionRequest struct {
+	Class   string `json:"class"`
+	Section string `json:"section"`
 }

@@ -14,6 +14,8 @@ import (
 	"ai-tutor-backend/internal/ai"
 	"ai-tutor-backend/internal/aicontent"
 	"ai-tutor-backend/internal/assignment"
+	"ai-tutor-backend/internal/badge"
+	"ai-tutor-backend/internal/leaderboard"
 	"ai-tutor-backend/internal/auth"
 	"ai-tutor-backend/internal/categories"
 	"ai-tutor-backend/internal/enrollment"
@@ -32,6 +34,7 @@ import (
 	"ai-tutor-backend/internal/search"
 	"ai-tutor-backend/internal/subjects"
 	"ai-tutor-backend/internal/users"
+	"ai-tutor-backend/internal/xp"
 	"ai-tutor-backend/internal/youtube"
 	"ai-tutor-backend/pkg/logger"
 )
@@ -82,6 +85,18 @@ func main() {
 	// --- Learning Streak: real activity-based streak, fed by progress/quiz/ai below ---
 	streakRepo := streak.NewRepository(db)
 	streakService := streak.NewService(streakRepo)
+
+	badgeRepo := badge.NewRepository(db)
+	badgeService := badge.NewService(badgeRepo, streakRepo)
+	badgeHandler := badge.NewHandler(badgeService)
+
+	xpRepo := xp.NewRepository(db)
+	xpService := xp.NewService(xpRepo, streakRepo)
+	xpHandler := xp.NewHandler(xpService)
+
+	leaderboardRepo := leaderboard.NewRepository(db)
+	leaderboardService := leaderboard.NewService(leaderboardRepo, usersRepo)
+	leaderboardHandler := leaderboard.NewHandler(leaderboardService)
 	streakHandler := streak.NewHandler(streakService)
 
 	// --- Student Enrollment: auto-enrolled on lesson completion, gates
@@ -95,7 +110,7 @@ func main() {
 	adminHandler := admin.NewHandler(adminService)
 
 	progressRepo := progress.NewRepository(db)
-	progressService := progress.NewService(progressRepo, streakService, enrollmentService)
+	progressService := progress.NewService(progressRepo, streakService, enrollmentService, badgeService, xpService)
 	progressHandler := progress.NewHandler(progressService)
 
 	aiContentRepo := aicontent.NewRepository(db)
@@ -109,7 +124,7 @@ func main() {
 
 	// --- Assignment & AI Auto Evaluation (Phase 1: subject-level targeting) ---
 	assignmentRepo := assignment.NewRepository(db)
-	assignmentService := assignment.NewService(assignmentRepo, subjectsRepo, groqClient, streakService)
+	assignmentService := assignment.NewService(assignmentRepo, subjectsRepo, groqClient, streakService, badgeService, xpService)
 	assignmentHandler := assignment.NewHandler(assignmentService)
 
 	// --- Live Classes (Phase 1: scheduling/calendar only - no video SDK set up yet) ---
@@ -127,7 +142,7 @@ func main() {
 	resourceHandler := resource.NewHandler(resourceService)
 
 	liveClassRepo := liveclass.NewRepository(db)
-	liveClassService := liveclass.NewService(liveClassRepo, notificationService, liveKitTokenSvc, liveKitRoomClient, cfg.LiveKitURL)
+	liveClassService := liveclass.NewService(liveClassRepo, notificationService, liveKitTokenSvc, liveKitRoomClient, cfg.LiveKitURL, badgeService)
 	liveClassHandler := liveclass.NewHandler(liveClassService)
 
 	recommendationsRepo := recommendations.NewRepository(db)
@@ -147,7 +162,7 @@ func main() {
 
 	// --- Quiz & Assessment: persisted attempts, results, analytics, AI quiz generator ---
 	quizRepo := quiz.NewRepository(db)
-	quizService := quiz.NewService(quizRepo, groqClient, streakService)
+	quizService := quiz.NewService(quizRepo, groqClient, streakService, badgeService, xpService)
 	quizHandler := quiz.NewHandler(quizService)
 
 	// --- Health checks (unchanged) ---
@@ -183,6 +198,9 @@ func main() {
 	youtube.RegisterRoutes(api, youtubeHandler, authMiddleware)
 	quiz.RegisterRoutes(api, quizHandler, authMiddleware)
 	streak.RegisterRoutes(api, streakHandler, authMiddleware)
+	badgeHandler.RegisterRoutes(api, authMiddleware)
+	xpHandler.RegisterRoutes(api, authMiddleware)
+	leaderboardHandler.RegisterRoutes(api, authMiddleware)
 	admin.RegisterRoutes(api, adminHandler, authMiddleware, middleware.RequireAdmin())
 	assignment.RegisterRoutes(api, assignmentHandler, authMiddleware, middleware.RequireTeacher())
 	assignment.RegisterSubjectRoute(api, assignmentHandler, authMiddleware)

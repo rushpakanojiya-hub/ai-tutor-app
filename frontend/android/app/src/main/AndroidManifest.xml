@@ -9,6 +9,7 @@
 <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
    <application
     android:label="ai_tutor_app"
     android:usesCleartextTraffic="true"
@@ -40,6 +41,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Required before LiveKit/flutter_webrtc can call
+             MediaProjection.start() for Screen Share - Android 14+
+             enforces this or the whole app process is killed. -->
+        <service
+            android:name=".ScreenShareForegroundService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

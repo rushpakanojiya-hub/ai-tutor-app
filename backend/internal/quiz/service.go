@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"ai-tutor-backend/internal/ai"
+	"ai-tutor-backend/internal/badge"
 	"ai-tutor-backend/internal/streak"
+	"ai-tutor-backend/internal/xp"
 )
 
 // ErrNoQuizForLesson is returned when a lesson has no AI-generated quiz yet.
@@ -30,12 +32,14 @@ type Service struct {
 	repo       *Repository
 	groqClient *ai.GroqClient
 	streakSvc  *streak.Service
+	badgeSvc   *badge.Service
+	xpSvc      *xp.Service
 }
 
-// NewService wires a Repository, the shared GroqClient, and the shared
-// streak Service into a quiz Service.
-func NewService(repo *Repository, groqClient *ai.GroqClient, streakSvc *streak.Service) *Service {
-	return &Service{repo: repo, groqClient: groqClient, streakSvc: streakSvc}
+// NewService wires a Repository, the shared GroqClient, the shared
+// streak Service, and the shared badge Service into a quiz Service.
+func NewService(repo *Repository, groqClient *ai.GroqClient, streakSvc *streak.Service, badgeSvc *badge.Service, xpSvc *xp.Service) *Service {
+	return &Service{repo: repo, groqClient: groqClient, streakSvc: streakSvc, badgeSvc: badgeSvc, xpSvc: xpSvc}
 }
 
 // SubmitLessonAttempt grades a lesson-based quiz attempt server-side
@@ -84,6 +88,9 @@ func (s *Service) SubmitLessonAttempt(userID, lessonID int, req SubmitLessonAtte
 		return nil, err
 	}
 	_ = s.streakSvc.RecordActivity(userID) // best-effort
+	go s.badgeSvc.CheckAndAwardBadges(userID)
+	go s.xpSvc.AwardQuizCompletion(userID, attemptID)
+	go s.xpSvc.OnStudyActivity(userID)
 
 	return s.repo.GetAttemptWithAnswers(userID, attemptID)
 }
@@ -137,6 +144,9 @@ func (s *Service) SubmitFreeformAttempt(userID int, req SubmitFreeformAttemptReq
 		return nil, err
 	}
 	_ = s.streakSvc.RecordActivity(userID) // best-effort
+	go s.badgeSvc.CheckAndAwardBadges(userID)
+	go s.xpSvc.AwardQuizCompletion(userID, attemptID)
+	go s.xpSvc.OnStudyActivity(userID)
 	return s.repo.GetAttemptWithAnswers(userID, attemptID)
 }
 
@@ -193,11 +203,6 @@ func (s *Service) GenerateQuiz(ctx context.Context, req GenerateQuizRequest) ([]
 
 	questionTypes := sanitizeQuestionTypes(req.QuestionTypes)
 
-	// Assign an explicit type to each question index (round-robin through
-	// the selected types) instead of loosely asking the model to "mix"
-	// types - Llama 3.3 was defaulting to single_mcq for everything when
-	// given a vague instruction. An explicit per-question assignment is
-	// far more reliably followed.
 	assignments := make([]string, numQuestions)
 	for i := 0; i < numQuestions; i++ {
 		assignments[i] = questionTypes[i%len(questionTypes)]
@@ -249,10 +254,6 @@ Rules:
 		return nil, fmt.Errorf("invalid JSON from Groq: %w", err)
 	}
 
-	// Safety net: force each question's type to match our assignment,
-	// in case Groq echoed back the wrong label despite generating the
-	// right shape (or vice versa - this at least keeps grading correct
-	// for whichever fields it did populate).
 	for i := range questions {
 		if i < len(assignments) {
 			questions[i].QuestionType = assignments[i]
