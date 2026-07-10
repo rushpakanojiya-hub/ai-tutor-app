@@ -65,15 +65,15 @@ class QuizAttemptQuestion {
     return QuizAttemptQuestion(
       questionType: json['question_type'] as String? ?? QuestionTypes.singleMcq,
       question: json['question_text'] ?? json['question'] ?? '',
-      options: (json['options'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
+      options: (json['options'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
       correctOption: json['correct_option'] as int?,
-      correctOptions: (json['correct_options'] as List<dynamic>?)?.map((e) => e as int).toList(),
+      correctOptions: (json['correct_options'] as List<dynamic>?)?.map((e) => e as int? ?? 0).toList(),
       correctText: json['correct_text'] as String?,
       hint: json['hint'] as String?,
       explanation: json['explanation'] as String?,
       difficultyScore: json['difficulty_score'] as int? ?? 5,
       selectedOption: json['selected_option'] as int?,
-      selectedOptions: (json['selected_options'] as List<dynamic>?)?.map((e) => e as int).toList(),
+      selectedOptions: (json['selected_options'] as List<dynamic>?)?.map((e) => e as int? ?? 0).toList(),
       submittedText: json['submitted_text'] as String?,
       isCorrect: json['is_correct'] as bool?,
     );

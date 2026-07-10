@@ -36,7 +36,7 @@ class SubjectModel {
 
   factory SubjectModel.fromJson(Map<String, dynamic> json) {
     return SubjectModel(
-      id: json['id'] as int,
+      id: json['id'] as int? ?? 0,
       categoryId: json['category_id'] as int? ?? 0,
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',

@@ -41,7 +41,7 @@ class AssignmentModel {
 
   factory AssignmentModel.fromJson(Map<String, dynamic> json) {
     return AssignmentModel(
-      id: json['id'] as int,
+      id: json['id'] as int? ?? 0,
       teacherId: json['teacher_id'] as int? ?? 0,
       teacherName: json['teacher_name'] as String? ?? '',
       subjectId: json['subject_id'] as int?,
@@ -116,9 +116,9 @@ class AssignmentEvaluationModel {
       aiScore: json['ai_score'] as int?,
       maxScore: json['max_score'] as int?,
       percentage: (json['percentage'] as num?)?.toDouble(),
-      strengths: (json['strengths'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-      weaknesses: (json['weaknesses'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-      missingConcepts: (json['missing_concepts'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
+      strengths: (json['strengths'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
+      weaknesses: (json['weaknesses'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
+      missingConcepts: (json['missing_concepts'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
       suggestions: json['suggestions'] as String? ?? '',
       teacherOverrideScore: json['teacher_override_score'] as int?,
       teacherFeedback: json['teacher_feedback'] as String? ?? '',
@@ -150,9 +150,9 @@ class AssignmentSubmissionModel {
 
   factory AssignmentSubmissionModel.fromJson(Map<String, dynamic> json) {
     return AssignmentSubmissionModel(
-      id: json['id'] as int,
-      assignmentId: json['assignment_id'] as int,
-      studentId: json['student_id'] as int,
+      id: json['id'] as int? ?? 0,
+      assignmentId: json['assignment_id'] as int? ?? 0,
+      studentId: json['student_id'] as int? ?? 0,
       studentName: json['student_name'] as String? ?? '',
       submissionText: json['submission_text'] as String? ?? '',
       status: json['status'] as String? ?? 'draft',

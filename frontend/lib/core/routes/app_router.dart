@@ -35,7 +35,7 @@ import '../../screens/subjects/subjects_screen.dart';
 /// are bounced to /login, authenticated users away from /login /register.
 ///
 /// Day 2 routes (categories/subjects/lessons/player/pdf-viewer/search) all
-/// sit "on top of" the authenticated area â€” none are reachable from
+/// sit "on top of" the authenticated area - none are reachable from
 /// /login or /register, matching the Dashboard -> Categories -> ... flow.
 class AppRouter {
   final AuthProvider authProvider;
@@ -143,8 +143,13 @@ class AppRouter {
         path: '/assignment-submissions',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
+          // QA fix ("Fix route parameter null crashes"): was `as int`
+          // with no fallback - if extra didn't contain assignmentId (a
+          // stale deep link, a caller forgetting to pass extra, etc.)
+          // this threw a null-cast exception and crashed the app. Now
+          // consistent with every other route in this file.
           return SubmissionReviewScreen(
-            assignmentId: extra['assignmentId'] as int,
+            assignmentId: extra['assignmentId'] as int? ?? 0,
             title: extra['title'] as String? ?? 'Assignment',
           );
         },
@@ -153,8 +158,9 @@ class AppRouter {
         path: '/subject-assignments',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
+          // QA fix - same as above.
           return AssignmentListScreen(
-            subjectId: extra['subjectId'] as int,
+            subjectId: extra['subjectId'] as int? ?? 0,
             subjectName: extra['subjectName'] as String? ?? 'Subject',
           );
         },
@@ -163,7 +169,8 @@ class AppRouter {
         path: '/assignment-detail',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
-          return AssignmentDetailScreen(assignmentId: extra['assignmentId'] as int);
+          // QA fix - same as above.
+          return AssignmentDetailScreen(assignmentId: extra['assignmentId'] as int? ?? 0);
         },
       ),
       GoRoute(

@@ -37,36 +37,47 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  // QA fix ("Dialog controller disposal"): classController/sectionController
+  // are created fresh every time this dialog opens (once per tap on a
+  // student) but were never disposed - each call leaked two
+  // TextEditingControllers for the lifetime of the app. Wrapping the
+  // dialog + save logic in try/finally guarantees disposal happens on
+  // every exit path (Cancel, Save, or an exception during the save call).
   Future<void> _editClassSection(StudentClassSectionModel student) async {
     final classController = TextEditingController(text: student.classValue);
     final sectionController = TextEditingController(text: student.section);
 
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(student.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: classController, decoration: const InputDecoration(labelText: 'Class')),
-            const SizedBox(height: 12),
-            TextField(controller: sectionController, decoration: const InputDecoration(labelText: 'Section')),
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(student.name),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: classController, decoration: const InputDecoration(labelText: 'Class')),
+              const SizedBox(height: 12),
+              TextField(controller: sectionController, decoration: const InputDecoration(labelText: 'Section')),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
-        ],
-      ),
-    );
-    if (saved != true) return;
+      );
+      if (saved != true) return;
 
-    try {
-      await _service.assignClassSection(student.id, classValue: classController.text.trim(), section: sectionController.text.trim());
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated.')));
-      _load();
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update.')));
+      try {
+        await _service.assignClassSection(student.id, classValue: classController.text.trim(), section: sectionController.text.trim());
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated.')));
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update.')));
+      }
+    } finally {
+      classController.dispose();
+      sectionController.dispose();
     }
   }
 

@@ -14,6 +14,26 @@ import '../services/api_service.dart';
 class AiProvider extends ChangeNotifier {
   final AiService _service = AiService();
 
+  // QA fix ("Fix AI Provider notifyListeners after dispose"):
+  // _revealTyped() runs a long-lived async loop (word-by-word typing
+  // animation, ~18ms per word) that calls notifyListeners() repeatedly.
+  // If the user navigates away mid-animation and this provider gets
+  // disposed, the loop was still running and its next notifyListeners()
+  // call threw "A ChangeNotifier was used after being disposed." Every
+  // notifyListeners() call in this class now goes through _safeNotify(),
+  // which is a no-op once disposed.
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _safeNotify() {
+    if (!_disposed) notifyListeners();
+  }
+
   // --- Chat ---
   List<AiMessageModel> messages = [];
   int? currentSessionId;
@@ -30,22 +50,22 @@ class AiProvider extends ChangeNotifier {
     currentSessionId = null;
     currentSubjectId = subjectId;
     chatError = null;
-    notifyListeners();
+    _safeNotify();
   }
 
   void setLanguage(String lang) {
     language = lang;
-    notifyListeners();
+    _safeNotify();
   }
 
   void setSubject(int? subjectId) {
     currentSubjectId = subjectId;
-    notifyListeners();
+    _safeNotify();
   }
 
   void toggleHomeworkMode() {
     homeworkMode = !homeworkMode;
-    notifyListeners();
+    _safeNotify();
   }
 
   /// Sends a message, waits for the AI Tutor's full reply, then reveals it
@@ -65,7 +85,7 @@ class AiProvider extends ChangeNotifier {
     ));
     isSending = true;
     chatError = null;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final result = await _service.sendMessage(
@@ -83,13 +103,13 @@ class AiProvider extends ChangeNotifier {
       debugPrint('[AiProvider] ApiException: ${e.message} (status ${e.statusCode})');
       chatError = e.message;
       isSending = false;
-      notifyListeners();
+      _safeNotify();
     } catch (e, stackTrace) {
       debugPrint('[AiProvider] Unexpected error in sendMessage: $e');
       debugPrint('[AiProvider] Stack trace: $stackTrace');
       chatError = 'Could not reach the AI Tutor. Please try again.';
       isSending = false;
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -106,24 +126,26 @@ class AiProvider extends ChangeNotifier {
       isStreaming: true,
     );
     messages.add(current);
-    notifyListeners();
+    _safeNotify();
 
     final words = fullText.split(' ');
     final buffer = StringBuffer();
     for (var i = 0; i < words.length; i++) {
+      if (_disposed) return; // stop the animation loop entirely once gone
       buffer.write(i == 0 ? words[i] : ' ${words[i]}');
       final index = messages.indexWhere((m) => m.id == assistantId);
       if (index == -1) return; // message was deleted mid-animation
       current = current.copyWith(message: buffer.toString());
       messages[index] = current;
-      notifyListeners();
+      _safeNotify();
       await Future.delayed(const Duration(milliseconds: 18));
     }
 
+    if (_disposed) return;
     final index = messages.indexWhere((m) => m.id == assistantId);
     if (index != -1) {
       messages[index] = messages[index].copyWith(isStreaming: false);
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -157,13 +179,13 @@ class AiProvider extends ChangeNotifier {
 
   void deleteMessageLocally(int messageId) {
     messages.removeWhere((m) => m.id == messageId);
-    notifyListeners();
+    _safeNotify();
   }
 
   Future<void> loadSessionIntoChat(int sessionId) async {
     isSending = false;
     chatError = null;
-    notifyListeners();
+    _safeNotify();
     try {
       final session = await _service.fetchSession(sessionId);
       currentSessionId = session.session.id;
@@ -172,7 +194,7 @@ class AiProvider extends ChangeNotifier {
     } catch (e) {
       chatError = 'Could not load this conversation.';
     }
-    notifyListeners();
+    _safeNotify();
   }
 
   // --- Session history ---
@@ -183,7 +205,7 @@ class AiProvider extends ChangeNotifier {
   Future<void> loadSessions() async {
     isLoadingSessions = true;
     sessionsError = null;
-    notifyListeners();
+    _safeNotify();
     try {
       sessions = await _service.fetchSessions();
     } on ApiException catch (e) {
@@ -192,7 +214,7 @@ class AiProvider extends ChangeNotifier {
       sessionsError = 'Could not load chat history.';
     }
     isLoadingSessions = false;
-    notifyListeners();
+    _safeNotify();
   }
 
   Future<void> deleteSession(int id) async {
@@ -202,7 +224,7 @@ class AiProvider extends ChangeNotifier {
       if (currentSessionId == id) {
         startNewChat();
       }
-      notifyListeners();
+      _safeNotify();
     } catch (_) {
       // best-effort
     }
@@ -216,7 +238,7 @@ class AiProvider extends ChangeNotifier {
   Future<void> loadRecommendations() async {
     isLoadingRecommendations = true;
     recommendationsError = null;
-    notifyListeners();
+    _safeNotify();
     try {
       recommendations = await _service.fetchRecommendations();
     } on ApiException catch (e) {
@@ -225,6 +247,6 @@ class AiProvider extends ChangeNotifier {
       recommendationsError = 'Could not load recommendations.';
     }
     isLoadingRecommendations = false;
-    notifyListeners();
+    _safeNotify();
   }
 }

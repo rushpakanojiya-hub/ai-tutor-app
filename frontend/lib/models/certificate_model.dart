@@ -29,11 +29,11 @@ class CertificateModel {
 
   factory CertificateModel.fromJson(Map<String, dynamic> json) {
     return CertificateModel(
-      id: json['id'] as int,
+      id: json['id'] as int? ?? 0,
       certificateCode: json['certificate_code'] as String? ?? '',
-      studentId: json['student_id'] as int,
+      studentId: json['student_id'] as int? ?? 0,
       studentName: json['student_name'] as String? ?? '',
-      subjectId: json['subject_id'] as int,
+      subjectId: json['subject_id'] as int? ?? 0,
       courseName: json['course_name'] as String? ?? '',
       subjectName: json['subject_name'] as String? ?? '',
       instructorName: json['instructor_name'] as String? ?? '',

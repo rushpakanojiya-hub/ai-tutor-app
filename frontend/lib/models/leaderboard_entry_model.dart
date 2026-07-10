@@ -22,7 +22,7 @@ class LeaderboardEntry {
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
       rank: json['rank'] as int? ?? 0,
-      studentId: json['student_id'] as int,
+      studentId: json['student_id'] as int? ?? 0,
       studentName: json['student_name'] as String? ?? '',
       classValue: json['class'] as String? ?? '',
       section: json['section'] as String? ?? '',

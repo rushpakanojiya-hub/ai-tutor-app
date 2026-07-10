@@ -9,7 +9,7 @@ class QuizQuestionModel {
   factory QuizQuestionModel.fromJson(Map<String, dynamic> json) {
     return QuizQuestionModel(
       question: json['question'] as String? ?? '',
-      options: (json['options'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
+      options: (json['options'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
       correctOption: json['correct_option'] as int? ?? 0,
     );
   }
@@ -41,9 +41,9 @@ class AiContentModel {
       lessonId: json['lesson_id'] as int? ?? 0,
       explanation: json['explanation'] as String? ?? '',
       summary: json['summary'] as String? ?? '',
-      keyPoints: (json['key_points'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-      examples: (json['examples'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
-      practiceQuestions: (json['practice_questions'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
+      keyPoints: (json['key_points'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
+      examples: (json['examples'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
+      practiceQuestions: (json['practice_questions'] as List<dynamic>? ?? []).map((e) => e as String? ?? '').toList(),
       quiz: (json['quiz'] as List<dynamic>? ?? [])
           .map((e) => QuizQuestionModel.fromJson(e as Map<String, dynamic>))
           .toList(),

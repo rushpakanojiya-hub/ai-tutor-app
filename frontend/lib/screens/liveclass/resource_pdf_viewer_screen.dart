@@ -21,6 +21,16 @@ class _ResourcePdfViewerScreenState extends State<ResourcePdfViewerScreen> {
   int _currentPage = 1;
   int _totalPages = 0;
 
+  // QA fix ("PdfViewerController disposal"): this controller was created
+  // but never disposed - every time this screen was opened and closed,
+  // its underlying resources (rendered page cache, native PDF handles)
+  // leaked for the lifetime of the app process.
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

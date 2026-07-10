@@ -15,7 +15,7 @@ class StudentClassSectionModel {
 
   factory StudentClassSectionModel.fromJson(Map<String, dynamic> json) {
     return StudentClassSectionModel(
-      id: json['id'] as int,
+      id: json['id'] as int? ?? 0,
       name: json['name'] as String? ?? '',
       email: json['email'] as String? ?? '',
       classValue: json['class'] as String? ?? '',

@@ -65,7 +65,7 @@ class LiveClassModel {
 
   factory LiveClassModel.fromJson(Map<String, dynamic> json) {
     return LiveClassModel(
-      id: json['id'] as int,
+      id: json['id'] as int? ?? 0,
       teacherId: json['teacher_id'] as int? ?? 0,
       teacherName: json['teacher_name'] as String? ?? '',
       subjectId: json['subject_id'] as int?,
@@ -99,7 +99,7 @@ class AttendanceRecord {
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
     return AttendanceRecord(
-      studentId: json['student_id'] as int,
+      studentId: json['student_id'] as int? ?? 0,
       studentName: json['student_name'] as String? ?? '',
       checkedInAt: DateTime.tryParse(json['checked_in_at'] as String? ?? '') ?? DateTime.now(),
       status: json['status'] as String? ?? 'present',

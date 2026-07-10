@@ -10,7 +10,7 @@ class LessonModel {
   final int duration; // minutes
   final int orderNumber;
 
-  /// Not part of the API response â€” set locally by the UI once a lesson
+  /// Not part of the API response Ã¢â‚¬â€ set locally by the UI once a lesson
   /// has been marked complete via the backend, so LessonsScreen can show a
   /// checkmark (see LessonProvider.loadLessons, which merges in real
   /// persisted completion from GET /api/progress/subjects/:id).
@@ -31,7 +31,7 @@ class LessonModel {
 
   factory LessonModel.fromJson(Map<String, dynamic> json) {
     return LessonModel(
-      id: json['id'] as int,
+      id: json['id'] as int? ?? 0,
       subjectId: json['subject_id'] as int? ?? 0,
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',

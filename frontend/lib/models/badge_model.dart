@@ -17,10 +17,10 @@ class BadgeModel {
 
   factory BadgeModel.fromJson(Map<String, dynamic> json) {
     return BadgeModel(
-      key: json['key'] as String,
-      name: json['name'] as String,
-      description: json['description'] as String,
-      iconKey: json['icon_key'] as String,
+      key: json['key'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      iconKey: json['icon_key'] as String? ?? '',
       unlocked: json['unlocked'] as bool? ?? false,
       earnedAt: json['earned_at'] != null ? DateTime.tryParse(json['earned_at'] as String) : null,
     );
