@@ -7,7 +7,7 @@ class ApiConstants {
   /// - Physical device / real backend: replace with your machine's LAN IP
   ///   or your deployed Render URL, e.g. https://your-app.onrender.com
   /// - iOS simulator: use http://localhost:8080
-  static const String baseUrl = 'http://192.168.1.36:8080/api';
+  static const String baseUrl = 'http://192.168.1.27:8080/api';
 
   // --- Day 1: Auth ---
   static const String register = '/auth/register';
