@@ -26,7 +26,6 @@ func (h *Handler) ListByLesson(c *gin.Context) {
 		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
 		return
 	}
-
 	list, err := h.service.ListByLesson(lessonID)
 	if err != nil {
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load notes")
@@ -35,20 +34,24 @@ func (h *Handler) ListByLesson(c *gin.Context) {
 	utils.RespondSuccess(c, http.StatusOK, "Notes fetched", list)
 }
 
-// Create handles POST /api/notes.
-// NOTE: not role-gated yet — see the same comment in categories/handler.go.
+// Create handles POST /api/notes (admin-only).
+//
+// QA fix: previously had no role check - any authenticated user could
+// create a note.
 func (h *Handler) Create(c *gin.Context) {
+	if c.GetString("role") != "admin" {
+		utils.RespondError(c, http.StatusForbidden, "Only admins can create notes")
+		return
+	}
 	var req CreateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.RespondError(c, http.StatusBadRequest, "lesson_id, title, and pdf_url are required")
 		return
 	}
-
 	id, err := h.service.Create(req)
 	if err != nil {
 		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	utils.RespondSuccess(c, http.StatusCreated, "Note created", gin.H{"id": id})
 }

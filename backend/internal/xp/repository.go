@@ -21,13 +21,20 @@ func (r *Repository) GetTotals(studentID int) (int, int, error) {
 	return xpTotal, pointsTotal, err
 }
 
-// AwardXP records one XP event and bumps the running totals - but only
-// if this exact (student, activityType, referenceKey) hasn't already
-// been awarded (the UNIQUE constraint on xp_events makes this safe to
-// call repeatedly/concurrently without double-counting, e.g. if a
-// student's course-completion check fires from two different hooks).
+// AwardXP records one XP event and bumps the running totals - both in a
+// single transaction (QA fix: these were previously two separate Exec
+// calls; a crash or DB error between them could leave the event ledger
+// and the running total out of sync with each other). The UNIQUE
+// constraint on xp_events still makes this safe to call repeatedly/
+// concurrently without double-counting.
 func (r *Repository) AwardXP(studentID int, activityType, referenceKey string, xpAmount, pointsAmount int) error {
-	res, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`
 		INSERT INTO xp_events (student_id, activity_type, reference_key, xp_amount, points_amount)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (student_id, activity_type, reference_key) DO NOTHING`,
@@ -36,11 +43,16 @@ func (r *Repository) AwardXP(studentID int, activityType, referenceKey string, x
 		return err
 	}
 	rows, err := res.RowsAffected()
-	if err != nil || rows == 0 {
-		return err // either an error, or a no-op duplicate - nothing to add to totals
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		// Duplicate event - nothing new to add to totals, and nothing to
+		// commit either, but that's still a successful no-op outcome.
+		return nil
 	}
 
-	_, err = r.db.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO student_xp_totals (student_id, total_xp, total_points, updated_at)
 		VALUES ($1, $2, $3, now())
 		ON CONFLICT (student_id) DO UPDATE SET
@@ -48,7 +60,11 @@ func (r *Repository) AwardXP(studentID int, activityType, referenceKey string, x
 			total_points = student_xp_totals.total_points + $3,
 			updated_at = now()`,
 		studentID, xpAmount, pointsAmount)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // IsSubjectFullyCompleted checks if the student has completed every

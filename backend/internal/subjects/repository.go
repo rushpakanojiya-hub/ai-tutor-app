@@ -3,6 +3,7 @@ package subjects
 import (
 	"database/sql"
 	"errors"
+	"strconv"
 )
 
 // ErrSubjectNotFound is returned when no subject matches the given ID.
@@ -136,7 +137,6 @@ func (r *Repository) SearchByName(userID int, query string) ([]Subject, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var result []Subject
 	for rows.Next() {
@@ -147,4 +147,111 @@ func (r *Repository) SearchByName(userID int, query string) ([]Subject, error) {
 		result = append(result, s)
 	}
 	return result, nil
+}
+
+// --- Admin Course Management (additive) ---
+
+var ErrCourseNotFound = errors.New("course not found")
+
+// AdminList powers the Course Management screen - search + filter by
+// category/status, with the exact fields the course cards need
+// (thumbnail, lesson/enrollment counts, status) - a deliberately
+// separate query from baseSelect above, so nothing student-facing is
+// touched by these filters.
+func (r *Repository) AdminList(search string, categoryID *int, status *string) ([]AdminCourseSummary, error) {
+	query := `
+		SELECT s.id, s.name, COALESCE(s.description, ''), COALESCE(s.thumbnail, ''), s.difficulty, s.status,
+		       s.category_id, cc.name,
+		       (SELECT COUNT(*) FROM lessons l WHERE l.subject_id = s.id) AS total_lessons,
+		       (SELECT COUNT(*) FROM subject_enrollments se WHERE se.subject_id = s.id) AS enrolled_count
+		FROM subjects s
+		JOIN course_categories cc ON cc.id = s.category_id
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argN := 1
+
+	if search != "" {
+		query += ` AND s.name ILIKE '%' || $` + strconv.Itoa(argN) + ` || '%'`
+		args = append(args, search)
+		argN++
+	}
+	if categoryID != nil {
+		query += ` AND s.category_id = $` + strconv.Itoa(argN)
+		args = append(args, *categoryID)
+		argN++
+	}
+	if status != nil && *status != "" {
+		query += ` AND s.status = $` + strconv.Itoa(argN)
+		args = append(args, *status)
+		argN++
+	}
+	query += ` ORDER BY s.name`
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []AdminCourseSummary
+	for rows.Next() {
+		var c AdminCourseSummary
+		if err := rows.Scan(&c.ID, &c.Name, &c.Description, &c.Thumbnail, &c.Difficulty, &c.Status,
+			&c.CategoryID, &c.CategoryName, &c.TotalLessons, &c.EnrolledCount); err != nil {
+			return nil, err
+		}
+		result = append(result, c)
+	}
+	return result, rows.Err()
+}
+
+// Update applies only the provided (non-nil) fields.
+func (r *Repository) Update(id int, req UpdateCourseRequest) error {
+	_, err := r.db.Exec(`
+		UPDATE subjects SET
+			category_id = COALESCE($1, category_id),
+			name = COALESCE($2, name),
+			description = COALESCE($3, description),
+			thumbnail = COALESCE($4, thumbnail),
+			difficulty = COALESCE($5, difficulty)
+		WHERE id = $6`,
+		req.CategoryID, req.Name, req.Description, req.Thumbnail, req.Difficulty, id,
+	)
+	return err
+}
+
+// Delete removes the course (subject) - lessons/enrollments cascade via
+// existing FK constraints (ON DELETE CASCADE), unchanged from before.
+func (r *Repository) Delete(id int) error {
+	res, err := r.db.Exec(`DELETE FROM subjects WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrCourseNotFound
+	}
+	return nil
+}
+
+// SetStatus - used by Publish/Unpublish.
+func (r *Repository) SetStatus(id int, status string) error {
+	res, err := r.db.Exec(`UPDATE subjects SET status = $1 WHERE id = $2`, status, id)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrCourseNotFound
+	}
+	return nil
+}
+
+// CountLessons - used to enforce "at least one lesson required before
+// publishing".
+func (r *Repository) CountLessons(subjectID int) (int, error) {
+	var count int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM lessons WHERE subject_id = $1`, subjectID).Scan(&count)
+	return count, err
 }

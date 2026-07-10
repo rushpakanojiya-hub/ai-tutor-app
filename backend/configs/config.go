@@ -3,6 +3,8 @@
 package configs
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -28,31 +30,31 @@ type Config struct {
 	// DatabaseURL, if set, takes priority over the individual DB_* fields
 	// above. This is the form Docker Compose / Render / most hosts prefer
 	// (a single connection string), while local dev can keep using the
-	// separate DB_HOST/DB_PORT/etc. vars from Day 1 — both are supported.
+	// separate DB_HOST/DB_PORT/etc. vars from Day 1 - both are supported.
 	DatabaseURL string
 
 	JWTSecret            string
 	JWTAccessExpiryMin   int
 	JWTRefreshExpiryDays int
 
-	// Groq API — powers the real LLM AI Tutor (internal/ai/groq_client.go).
+	// Groq API - powers the real LLM AI Tutor (internal/ai/groq_client.go).
 	GroqAPIKey string
 	GroqAPIURL string
 	GroqModel  string
 
-	// YouTube Data API v3 — powers per-lesson recommended videos
+	// YouTube Data API v3 - powers per-lesson recommended videos
 	// (internal/youtube/youtube_client.go). Supports multiple comma-separated
 	// keys for quota rotation, e.g. YOUTUBE_API_KEY=key1,key2,key3
 	YoutubeAPIKeys    []string
 	YoutubeMaxResults int
 
-	// LiveKit — powers real video calling for Live Classes
+	// LiveKit - powers real video calling for Live Classes
 	// (internal/livekit). Get these from cloud.livekit.io project settings.
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
 
-	// Cloudinary — powers Class Resources file uploads (internal/resource).
+	// Cloudinary - powers Class Resources file uploads (internal/resource).
 	CloudinaryCloudName string
 	CloudinaryAPIKey    string
 	CloudinaryAPISecret string
@@ -66,10 +68,12 @@ func LoadConfig() *Config {
 		log.Println("No .env file found, relying on system environment variables")
 	}
 
-	return &Config{
+	appEnv := getEnv("APP_ENV", "development")
+
+	cfg := &Config{
 		Port:    getEnv("PORT", "8080"),
 		GinMode: getEnv("GIN_MODE", "debug"),
-		AppEnv:  getEnv("APP_ENV", "development"),
+		AppEnv:  appEnv,
 
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnv("DB_PORT", "5432"),
@@ -80,7 +84,7 @@ func LoadConfig() *Config {
 
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 
-		JWTSecret:            getEnv("JWT_SECRET", "insecure_dev_secret_change_me"),
+		JWTSecret:            getEnv("JWT_SECRET", ""),
 		JWTAccessExpiryMin:   getEnvAsInt("JWT_ACCESS_EXPIRY_MINUTES", 60),
 		JWTRefreshExpiryDays: getEnvAsInt("JWT_REFRESH_EXPIRY_DAYS", 7),
 
@@ -99,6 +103,37 @@ func LoadConfig() *Config {
 		CloudinaryAPIKey:    getEnv("CLOUDINARY_API_KEY", ""),
 		CloudinaryAPISecret: getEnv("CLOUDINARY_API_SECRET", ""),
 	}
+
+	// Security fix (QA: "Hardcoded JWT secret") - the old code always fell
+	// back to a hardcoded string ("insecure_dev_secret_change_me") when
+	// JWT_SECRET wasn't set, silently signing every token with a secret
+	// that's visible in the source code. Now:
+	//   - production: refuses to start without a real JWT_SECRET, instead
+	//     of quietly issuing forgeable tokens.
+	//   - development: generates a random secret per run if none is set,
+	//     so local/dev boots still work with zero setup, but every restart
+	//     invalidates old tokens rather than reusing a known value.
+	if cfg.JWTSecret == "" {
+		if appEnv == "production" {
+			log.Fatal("[FATAL] JWT_SECRET must be set in production - refusing to start with no secret")
+		}
+		generated, err := generateRandomSecret(32)
+		if err != nil {
+			log.Fatalf("[FATAL] Could not generate a fallback JWT secret: %v", err)
+		}
+		log.Println("[WARNING] JWT_SECRET not set - using a randomly generated development-only secret. Set JWT_SECRET in .env for stable sessions across restarts.")
+		cfg.JWTSecret = generated
+	}
+
+	return cfg
+}
+
+func generateRandomSecret(numBytes int) (string, error) {
+	b := make([]byte, numBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random secret: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // DSN builds the PostgreSQL connection string. If DATABASE_URL is set, it is

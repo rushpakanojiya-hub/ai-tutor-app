@@ -30,3 +30,11 @@ func (s *Service) Create(req CreateCategoryRequest) (int, error) {
 	}
 	return s.repo.Create(req.Name, req.Icon)
 }
+
+// Update - part of Course Categories management (admin-only, enforced in handler).
+func (s *Service) Update(id int, req UpdateCategoryRequest) error {
+	if req.Name != nil && *req.Name == "" {
+		return errors.New("category name is required")
+	}
+	return s.repo.Update(id, req)
+}

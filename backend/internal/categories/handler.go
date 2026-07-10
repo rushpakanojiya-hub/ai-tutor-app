@@ -50,14 +50,19 @@ func (h *Handler) GetByID(c *gin.Context) {
 	utils.RespondSuccess(c, http.StatusOK, "Category fetched", category)
 }
 
-// Create handles POST /api/categories.
+// Create handles POST /api/categories (admin-only).
 //
-// NOTE: not role-gated yet — there is no admin dashboard/role in Day 2.
-// Once one exists, add middleware.RequireAdmin() to this route's chain.
+// QA fix: this endpoint previously had no role check at all - any
+// authenticated user (including students) could create a course
+// category. Categories/Subjects/Lessons/Notes Create now all require
+// admin, matching how their Update/Delete counterparts are already gated.
 func (h *Handler) Create(c *gin.Context) {
+	if c.GetString("role") != "admin" {
+		utils.RespondError(c, http.StatusForbidden, "Only admins can create categories")
+		return
+	}
 	var req CreateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.RespondError(c, http.StatusBadRequest, "Category name is required")
 		return
 	}
 
@@ -68,4 +73,32 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	utils.RespondSuccess(c, http.StatusCreated, "Category created", gin.H{"id": id})
+}
+
+// Update handles PUT /api/categories/:id (admin-only) - part of Course
+// Categories management.
+func (h *Handler) Update(c *gin.Context) {
+	if c.GetString("role") != "admin" {
+		utils.RespondError(c, http.StatusForbidden, "Only admins can manage categories")
+		return
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid category id")
+		return
+	}
+	var req UpdateCategoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if err := h.service.Update(id, req); err != nil {
+		if errors.Is(err, ErrCategoryNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "Category not found")
+			return
+		}
+		utils.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Category updated", nil)
 }

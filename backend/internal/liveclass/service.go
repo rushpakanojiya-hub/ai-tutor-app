@@ -121,6 +121,13 @@ func (s *Service) Start(classID, teacherID int) (*StartResponse, error) {
 	if class.MeetingStatus == MeetingEnded {
 		return nil, ErrMeetingAlreadyEnded
 	}
+	// QA fix: cancelling a class only ever set the schedule Status to
+	// "cancelled" - it never blocked Start() from also flipping
+	// MeetingStatus to "live", since Start() only checked MeetingStatus.
+	// A cancelled class could still be started and joined.
+	if class.Status == StatusCancelled {
+		return nil, ErrClassCancelled
+	}
 
 	roomName := class.RoomName
 	if roomName == "" {

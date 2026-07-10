@@ -3,6 +3,8 @@ package auth
 import (
 	"database/sql"
 	"errors"
+
+	"github.com/lib/pq"
 )
 
 // ErrUserNotFound is returned when no user matches the given lookup.
@@ -10,6 +12,9 @@ var ErrUserNotFound = errors.New("user not found")
 
 // ErrEmailAlreadyExists is returned when registering with a duplicate email.
 var ErrEmailAlreadyExists = errors.New("email already registered")
+
+// postgres unique_violation error code.
+const pqUniqueViolation = "23505"
 
 // Repository handles direct SQL access for the users table (auth context).
 type Repository struct {
@@ -23,16 +28,16 @@ func NewRepository(db *sql.DB) *Repository {
 
 // CreateUser inserts a new user row (with the given status) and returns
 // the generated ID.
+//
+// QA fix ("Duplicate email registration race condition"): the previous
+// version did a SELECT EXISTS check, then a separate INSERT - two
+// concurrent registrations with the same email could both pass the
+// check before either INSERTs. The real fix is the DB-level UNIQUE
+// index on users.email (migration 026) - this method now attempts the
+// INSERT directly and translates a unique-violation into
+// ErrEmailAlreadyExists, which is race-proof (Postgres itself serializes
+// the conflicting inserts and only lets one succeed).
 func (r *Repository) CreateUser(name, email, passwordHash, role, status string) (int, error) {
-	var exists bool
-	checkQuery := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`
-	if err := r.db.QueryRow(checkQuery, email).Scan(&exists); err != nil {
-		return 0, err
-	}
-	if exists {
-		return 0, ErrEmailAlreadyExists
-	}
-
 	var id int
 	insertQuery := `
 		INSERT INTO users (name, email, password_hash, role, status)
@@ -41,13 +46,60 @@ func (r *Repository) CreateUser(name, email, passwordHash, role, status string) 
 	`
 	err := r.db.QueryRow(insertQuery, name, email, passwordHash, role, status).Scan(&id)
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
+			return 0, ErrEmailAlreadyExists
+		}
 		return 0, err
 	}
 	return id, nil
 }
 
-// CreateTeacherProfile stores the extra application details a teacher
-// submitted, alongside their (pending) user row.
+// CreateTeacherApplication creates the user row and its teacher_profiles
+// row in ONE transaction (QA fix: "Teacher registration transaction" -
+// previously these were two independent calls; if the second failed,
+// the user row was left behind with no profile - a permanently broken,
+// half-registered account). Either both rows exist, or neither does.
+func (r *Repository) CreateTeacherApplication(name, email, passwordHash, role, status, phone, qualification, experience, subjects, bio string) (int, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var userID int
+	err = tx.QueryRow(`
+		INSERT INTO users (name, email, password_hash, role, status)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		name, email, passwordHash, role, status,
+	).Scan(&userID)
+	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
+			return 0, ErrEmailAlreadyExists
+		}
+		return 0, err
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO teacher_profiles (user_id, phone, qualification, experience, subjects, bio)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		userID, phone, qualification, experience, subjects, bio,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+// CreateTeacherProfile is kept for compatibility with any other caller,
+// but RegisterTeacher (service.go) now uses the transactional
+// CreateTeacherApplication above instead of calling this separately.
 func (r *Repository) CreateTeacherProfile(userID int, phone, qualification, experience, subjects, bio string) error {
 	_, err := r.db.Exec(`
 		INSERT INTO teacher_profiles (user_id, phone, qualification, experience, subjects, bio)

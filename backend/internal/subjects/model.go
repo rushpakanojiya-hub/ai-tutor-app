@@ -38,3 +38,36 @@ type CreateSubjectRequest struct {
 	Description string `json:"description"`
 	Thumbnail   string `json:"thumbnail"`
 }
+
+// --- Admin Course Management (additive - does not touch the student-
+// facing Subject/CreateSubjectRequest types or queries above) ---
+
+const (
+	StatusDraft     = "draft"
+	StatusPublished = "published"
+)
+
+// AdminCourseSummary is one row on the admin's Course Management list -
+// deliberately a separate, lighter type from Subject (which carries
+// per-student progress fields that don't apply here).
+type AdminCourseSummary struct {
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Thumbnail     string `json:"thumbnail"`
+	Difficulty    string `json:"difficulty"`
+	Status        string `json:"status"`
+	CategoryID    int    `json:"category_id"`
+	CategoryName  string `json:"category_name"`
+	TotalLessons  int    `json:"total_lessons"`
+	EnrolledCount int    `json:"enrolled_count"`
+}
+
+// UpdateCourseRequest - pointer fields mean "only update if present".
+type UpdateCourseRequest struct {
+	CategoryID  *int    `json:"category_id"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Thumbnail   *string `json:"thumbnail"`
+	Difficulty  *string `json:"difficulty"`
+}

@@ -375,6 +375,8 @@ func respondForMeetingError(c *gin.Context, err error, fallback string) {
 		utils.RespondError(c, http.StatusForbidden, "The teacher has locked this class to new joins")
 	case errors.Is(err, ErrClassFull):
 		utils.RespondError(c, http.StatusConflict, "Class is full. Maximum participant limit reached.")
+	case errors.Is(err, ErrClassCancelled):
+		utils.RespondError(c, http.StatusConflict, "This class has been cancelled and cannot be started")
 	default:
 		utils.RespondError(c, http.StatusInternalServerError, fallback)
 	}

@@ -1,5 +1,5 @@
 // Package categories implements the top-level course category feature
-// (Academic, Programming, Science, ...) — the first level of the
+// (Academic, Programming, Science, ...) - the first level of the
 // Dashboard -> Categories -> Subjects -> Lessons hierarchy.
 package categories
 
@@ -17,4 +17,12 @@ type Category struct {
 type CreateCategoryRequest struct {
 	Name string `json:"name" binding:"required"`
 	Icon string `json:"icon"`
+}
+
+// UpdateCategoryRequest is the expected JSON body for PUT /api/categories/:id
+// (admin-only, part of Course Categories management) - pointer fields mean
+// "only update if present".
+type UpdateCategoryRequest struct {
+	Name *string `json:"name"`
+	Icon *string `json:"icon"`
 }

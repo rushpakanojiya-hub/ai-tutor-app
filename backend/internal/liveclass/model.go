@@ -23,6 +23,10 @@ const (
 // max_students participants connected.
 var ErrClassFull = errors.New("class is full. maximum participant limit reached")
 
+// ErrClassCancelled is returned by Start (QA fix) - a cancelled class
+// must never be startable/joinable again.
+var ErrClassCancelled = errors.New("this class has been cancelled and cannot be started")
+
 type LiveClass struct {
 	ID            int        `json:"id"`
 	TeacherID     int        `json:"teacher_id"`

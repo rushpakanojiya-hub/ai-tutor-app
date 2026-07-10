@@ -6,16 +6,17 @@ import "time"
 
 // Lesson mirrors the "lessons" table row.
 type Lesson struct {
-	ID           int       `json:"id"`
-	SubjectID    int       `json:"subject_id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	VideoURL     string    `json:"video_url"`
-	PDFURL       string    `json:"pdf_url"`
-	ThumbnailURL string    `json:"thumbnail_url"`
-	Duration     int       `json:"duration"` // minutes
-	OrderNumber  int       `json:"order_number"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID             int       `json:"id"`
+	SubjectID      int       `json:"subject_id"`
+	Title          string    `json:"title"`
+	Description    string    `json:"description"`
+	VideoURL       string    `json:"video_url"`
+	PDFURL         string    `json:"pdf_url"`
+	AssignmentURL  string    `json:"assignment_url"`
+	ThumbnailURL   string    `json:"thumbnail_url"`
+	Duration       int       `json:"duration"` // minutes
+	OrderNumber    int       `json:"order_number"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // CreateLessonRequest is the expected JSON body for POST /api/lessons.
@@ -28,4 +29,27 @@ type CreateLessonRequest struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 	Duration     int    `json:"duration"`
 	OrderNumber  int    `json:"order_number"`
+}
+
+// --- Admin Course Management (additive) ---
+
+// UpdateLessonRequest - pointer fields mean "only update if present".
+type UpdateLessonRequest struct {
+	Title        *string `json:"title"`
+	Description  *string `json:"description"`
+	VideoURL     *string `json:"video_url"`
+	PDFURL       *string `json:"pdf_url"`
+	ThumbnailURL *string `json:"thumbnail_url"`
+	Duration     *int    `json:"duration"`
+}
+
+// ReorderItem pairs a lesson ID with its new order_number.
+type ReorderItem struct {
+	ID          int `json:"id" binding:"required"`
+	OrderNumber int `json:"order_number"`
+}
+
+// ReorderLessonsRequest is the body for POST /api/subjects/:id/lessons/reorder.
+type ReorderLessonsRequest struct {
+	Items []ReorderItem `json:"items" binding:"required"`
 }

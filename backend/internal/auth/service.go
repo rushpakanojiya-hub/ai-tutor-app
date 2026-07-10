@@ -54,6 +54,13 @@ func (s *Service) Register(req RegisterRequest) error {
 // RegisterTeacher validates a teacher application, creates the user as
 // "pending", and stores the extra profile details. The teacher cannot log
 // in until an admin approves the account (see ApproveTeacher).
+//
+// QA fix ("Teacher registration transaction"): this used to call
+// CreateUser then CreateTeacherProfile as two independent statements -
+// if the profile insert failed, the user row was left behind with no
+// profile, a broken half-registered account with no way to complete
+// itself or clean up. CreateTeacherApplication now does both in a single
+// transaction: either the full application is saved, or none of it is.
 func (s *Service) RegisterTeacher(req TeacherApplyRequest) error {
 	if !utils.IsValidEmail(req.Email) {
 		return errors.New("invalid email format")
@@ -67,12 +74,11 @@ func (s *Service) RegisterTeacher(req TeacherApplyRequest) error {
 		return err
 	}
 
-	userID, err := s.repo.CreateUser(req.Name, req.Email, hash, constants.RoleTeacher, StatusPending)
-	if err != nil {
-		return err
-	}
-
-	return s.repo.CreateTeacherProfile(userID, req.Phone, req.Qualification, req.Experience, req.Subjects, req.Bio)
+	_, err = s.repo.CreateTeacherApplication(
+		req.Name, req.Email, hash, constants.RoleTeacher, StatusPending,
+		req.Phone, req.Qualification, req.Experience, req.Subjects, req.Bio,
+	)
+	return err
 }
 
 // Login verifies credentials, checks the account is active, and on success
@@ -122,9 +128,7 @@ func (s *Service) Profile(userID int) (*User, error) {
 	return s.repo.FindByID(userID)
 }
 
-// --- Admin approval queue (no dedicated admin panel yet - these are the
-// backend endpoints; approving today means calling them directly, e.g.
-// via a REST client, until an admin UI exists) ---
+// --- Admin approval queue ---
 
 func (s *Service) ListPendingTeachers() ([]TeacherApplication, error) {
 	return s.repo.ListTeacherApplications(StatusPending)

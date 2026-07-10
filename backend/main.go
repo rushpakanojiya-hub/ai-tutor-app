@@ -1,4 +1,4 @@
-// AI Tutor Backend — Day 2 (Course & Learning Management added)
+// AI Tutor Backend Ã¢â‚¬â€ Day 2 (Course & Learning Management added)
 // Boots the Gin server, connects to PostgreSQL, and wires up all modules
 // using Clean Architecture (handler -> service -> repository -> model).
 package main
@@ -51,7 +51,7 @@ func main() {
 	router.Use(middleware.CORSMiddleware())
 
 	// Serves lesson PDF notes from backend/static/notes/*.pdf as
-	// http://<host>:<port>/static/notes/<file>.pdf — real, self-hosted
+	// http://<host>:<port>/static/notes/<file>.pdf Ã¢â‚¬â€ real, self-hosted
 	// content instead of random third-party URLs (see migration 000014).
 	router.Static("/static", "./static")
 
@@ -75,8 +75,11 @@ func main() {
 	subjectsService := subjects.NewService(subjectsRepo)
 	subjectsHandler := subjects.NewHandler(subjectsService)
 
+	// Moved up from below (Course Management needs it for lesson video/PDF/
+	// assignment uploads) - cfg has no other dependency, so this is safe.
+	cloudinaryClient := cloudinary.NewClient(cfg.CloudinaryCloudName, cfg.CloudinaryAPIKey, cfg.CloudinaryAPISecret)
 	lessonsRepo := lessons.NewRepository(db)
-	lessonsService := lessons.NewService(lessonsRepo)
+	lessonsService := lessons.NewService(lessonsRepo, cloudinaryClient)
 	lessonsHandler := lessons.NewHandler(lessonsService)
 
 	notesRepo := notes.NewRepository(db)
@@ -141,7 +144,6 @@ func main() {
 	liveKitTokenSvc := livekit.NewTokenService(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 	liveKitRoomClient := livekit.NewRoomClient(cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 
-	cloudinaryClient := cloudinary.NewClient(cfg.CloudinaryCloudName, cfg.CloudinaryAPIKey, cfg.CloudinaryAPISecret)
 	resourceRepo := resource.NewRepository(db)
 	resourceService := resource.NewService(resourceRepo, cloudinaryClient)
 	resourceHandler := resource.NewHandler(resourceService)
@@ -154,7 +156,7 @@ func main() {
 	recommendationsService := recommendations.NewService(recommendationsRepo)
 	recommendationsHandler := recommendations.NewHandler(recommendationsService)
 
-	// search reuses the categories/subjects/lessons/aicontent repositories directly —
+	// search reuses the categories/subjects/lessons/aicontent repositories directly Ã¢â‚¬â€
 	// no separate "search" table exists, it's a fan-out query.
 	searchService := search.NewService(categoriesRepo, subjectsRepo, lessonsRepo, aiContentRepo)
 	searchHandler := search.NewHandler(searchService)
@@ -216,7 +218,7 @@ func main() {
 	resource.RegisterRoutes(api, resourceHandler, authMiddleware, middleware.RequireTeacher())
 	notification.RegisterRoutes(api, notificationHandler, authMiddleware)
 
-	// Role-gated routes are still intentionally absent (see Day 1 notes) —
+	// Role-gated routes are still intentionally absent (see Day 1 notes) Ã¢â‚¬â€
 	// when an admin dashboard exists, the POST endpoints above (create
 	// category/subject/lesson/note) should switch to
 	// middleware.RequireAdmin() instead of the plain authMiddleware.

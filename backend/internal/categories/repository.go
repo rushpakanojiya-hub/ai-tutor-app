@@ -25,7 +25,6 @@ func (r *Repository) FindAll() ([]Category, error) {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var result []Category
 	for rows.Next() {
 		var c Category
@@ -74,7 +73,6 @@ func (r *Repository) SearchByName(query string) ([]Category, error) {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var result []Category
 	for rows.Next() {
 		var c Category
@@ -86,4 +84,24 @@ func (r *Repository) SearchByName(query string) ([]Category, error) {
 		result = append(result, c)
 	}
 	return result, nil
+}
+
+// Update applies only the provided (non-nil) fields - part of Course
+// Categories management.
+func (r *Repository) Update(id int, req UpdateCategoryRequest) error {
+	res, err := r.db.Exec(`
+		UPDATE course_categories SET
+			name = COALESCE($1, name),
+			icon = COALESCE($2, icon)
+		WHERE id = $3`,
+		req.Name, req.Icon, id,
+	)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrCategoryNotFound
+	}
+	return nil
 }
