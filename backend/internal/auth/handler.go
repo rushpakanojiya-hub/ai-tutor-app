@@ -145,6 +145,10 @@ func (h *Handler) ListPendingTeachers(c *gin.Context) {
 }
 
 // ApproveTeacher handles POST /api/auth/admin/teachers/:id/approve.
+//
+// QA fix ("Teacher approval validation"): the service now validates the
+// target is an actual pending teacher application; this handler maps
+// that new error to a clear 400 instead of a generic 500.
 func (h *Handler) ApproveTeacher(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -152,6 +156,14 @@ func (h *Handler) ApproveTeacher(c *gin.Context) {
 		return
 	}
 	if err := h.service.ApproveTeacher(id); err != nil {
+		if errors.Is(err, ErrNotATeacherApplication) {
+			utils.RespondError(c, http.StatusBadRequest, "This user is not a pending teacher application")
+			return
+		}
+		if errors.Is(err, ErrUserNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "User not found")
+			return
+		}
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to approve teacher")
 		return
 	}
@@ -159,6 +171,8 @@ func (h *Handler) ApproveTeacher(c *gin.Context) {
 }
 
 // RejectTeacher handles POST /api/auth/admin/teachers/:id/reject.
+//
+// QA fix ("Teacher rejection validation"): same reasoning as ApproveTeacher.
 func (h *Handler) RejectTeacher(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -166,6 +180,14 @@ func (h *Handler) RejectTeacher(c *gin.Context) {
 		return
 	}
 	if err := h.service.RejectTeacher(id); err != nil {
+		if errors.Is(err, ErrNotATeacherApplication) {
+			utils.RespondError(c, http.StatusBadRequest, "This user is not a pending teacher application")
+			return
+		}
+		if errors.Is(err, ErrUserNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "User not found")
+			return
+		}
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to reject teacher")
 		return
 	}

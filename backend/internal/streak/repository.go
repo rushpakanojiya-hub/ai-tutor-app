@@ -179,3 +179,41 @@ func (r *Repository) GetActivityHeatmap(userID, days int) ([]HeatmapDay, error) 
 func truncateToDate(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
+
+// GetCurrentStreakWithStartDate is like GetCurrentStreak, but also
+// returns the date the current unbroken run started. Added (additive -
+// GetCurrentStreak itself is untouched, so no other caller is affected)
+// for the "study streak reward logic" QA fix in xp/service.go: without
+// a stable per-run anchor, a milestone reward's dedup key ("streak-
+// milestone-1") stayed the same forever, so a student who broke their
+// streak and later built a fresh 7-day run again could never be
+// rewarded for it a second time - the run's start date makes each
+// distinct streak run's key unique.
+func (r *Repository) GetCurrentStreakWithStartDate(userID int) (int, time.Time, error) {
+	dates, err := r.allDatesDesc(userID)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	if len(dates) == 0 {
+		return 0, time.Time{}, nil
+	}
+
+	today := truncateToDate(time.Now())
+	daysSinceRecent := int(today.Sub(dates[0]).Hours() / 24)
+	if daysSinceRecent > 1 {
+		return 0, time.Time{}, nil
+	}
+
+	streakCount := 1
+	startDate := dates[0]
+	for i := 1; i < len(dates); i++ {
+		diff := int(dates[i-1].Sub(dates[i]).Hours() / 24)
+		if diff == 1 {
+			streakCount++
+			startDate = dates[i]
+		} else {
+			break
+		}
+	}
+	return streakCount, startDate, nil
+}

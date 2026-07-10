@@ -44,7 +44,12 @@ class AppRouter {
 
   late final GoRouter router = GoRouter(
     initialLocation: '/',
-    refreshListenable: authProvider,
+    // QA fix ("Router rebuild issue"): was `refreshListenable:
+    // authProvider` - every notifyListeners() on AuthProvider (including
+    // ones only toggling a loading spinner, unrelated to auth status)
+    // triggered a full router redirect re-evaluation. statusNotifier
+    // only fires when authProvider.status itself actually changes.
+    refreshListenable: authProvider.statusNotifier,
     routes: [
       GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),

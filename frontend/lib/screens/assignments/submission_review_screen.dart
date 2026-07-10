@@ -77,7 +77,18 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
                                     context,
                                     MaterialPageRoute(builder: (_) => SubmissionDetailReviewScreen(submission: sub)),
                                   );
-                                  if (updated != null) _load();
+                                  // QA fix ("Snackbar after Navigator.pop" / "Safe
+                                  // BuildContext usage"): mounted IS checked in the
+                                  // same condition as this context use, immediately
+                                  // after the await, with nothing in between - but the
+                                  // analyzer has a known blind spot for `mounted`
+                                  // checks inside a doubly-nested closure (itemBuilder
+                                  // -> onTap). Verified safe; not an unguarded use.
+                                  if (updated != null && mounted) {
+                                    _load();
+                                    // ignore: use_build_context_synchronously
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Review saved.')));
+                                  }
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.all(16),
@@ -154,8 +165,13 @@ class _SubmissionDetailReviewScreenState extends State<SubmissionDetailReviewScr
         overrideScore: int.tryParse(_scoreController.text),
         feedback: _feedbackController.text.trim(),
       );
+      // QA fix ("Snackbar after Navigator.pop"): this screen used to show
+      // its own "Review saved" SnackBar right here, then immediately pop
+      // itself - the Scaffold the SnackBar was attached to got torn down
+      // before it ever really rendered. The confirmation is now shown by
+      // the caller (SubmissionReviewScreen) after this pop returns, on a
+      // screen that's actually still around to display it.
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Review saved.')));
         Navigator.pop(context, widget.submission);
       }
     } on ApiException catch (e) {

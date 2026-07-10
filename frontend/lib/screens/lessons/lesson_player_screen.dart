@@ -55,18 +55,31 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
 
     try {
       final lesson = await _lessonService.fetchLessonById(lessonId);
+      // QA fix ("Missing mounted checks after async operations"): this
+      // setState ran unconditionally right after an await - if the user
+      // had already navigated away while the fetch was in flight, this
+      // threw "setState() called after dispose()".
+      if (!mounted) return;
       setState(() => _lesson = lesson);
 
       if (lesson.videoUrl.isNotEmpty) {
         await _initVideo(ApiConstants.resolveMediaUrl(lesson.videoUrl));
       }
 
+      // QA fix ("Missing mounted checks after async operations"): two
+      // separate awaits sit inside this single mounted-guard - if the
+      // widget got unmounted during loadNotes() (between the two
+      // calls), loadAiContent() below would still run against a
+      // disposed context. Re-checking mounted between them closes that
+      // gap instead of only checking once at the top.
       if (mounted) {
         await context.read<LessonProvider>().loadNotes(lessonId);
-        await context.read<LessonProvider>().loadAiContent(lessonId);
+        if (mounted) {
+          await context.read<LessonProvider>().loadAiContent(lessonId);
+        }
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Could not load this lesson. Please try again.');
+      if (mounted) setState(() => _errorMessage = 'Could not load this lesson. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

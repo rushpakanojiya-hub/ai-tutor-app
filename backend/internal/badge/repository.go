@@ -130,7 +130,7 @@ func (r *Repository) HasPerfectAttendance(studentID int) (bool, error) {
 			AND (SELECT COUNT(*) FROM live_classes lc3 WHERE lc3.subject_id = lc.subject_id AND lc3.status = 'completed') = (
 				SELECT COUNT(*) FROM live_class_attendance a
 				JOIN live_classes lc4 ON lc4.id = a.live_class_id
-				WHERE lc4.subject_id = lc.subject_id AND a.student_id = $1
+				WHERE lc4.subject_id = lc.subject_id AND lc4.status = 'completed' AND a.student_id = $1
 			)
 		)`, studentID).Scan(&exists)
 	return exists, err

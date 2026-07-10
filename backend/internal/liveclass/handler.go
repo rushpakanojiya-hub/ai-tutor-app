@@ -24,6 +24,8 @@ func respondForError(c *gin.Context, err error, fallback string) {
 		utils.RespondError(c, http.StatusNotFound, "Class not found")
 	case errors.Is(err, ErrForbidden):
 		utils.RespondError(c, http.StatusForbidden, "You can only manage classes you scheduled")
+	case errors.Is(err, ErrInvalidTimeRange):
+		utils.RespondError(c, http.StatusBadRequest, "End time must be after start time")
 	default:
 		utils.RespondError(c, http.StatusInternalServerError, fallback)
 	}
@@ -38,6 +40,10 @@ func (h *Handler) Create(c *gin.Context) {
 	teacherID := c.GetInt("user_id")
 	id, err := h.service.Create(teacherID, req)
 	if err != nil {
+		if errors.Is(err, ErrInvalidTimeRange) {
+			utils.RespondError(c, http.StatusBadRequest, "End time must be after start time")
+			return
+		}
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to schedule class")
 		return
 	}

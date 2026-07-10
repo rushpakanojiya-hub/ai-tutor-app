@@ -44,6 +44,7 @@ class AiProvider extends ChangeNotifier {
   bool homeworkMode = false;
 
   String _lastUserMessage = '';
+  int? _lastUserMessageId;
 
   void startNewChat({int? subjectId}) {
     messages = [];
@@ -75,9 +76,11 @@ class AiProvider extends ChangeNotifier {
     if (text.trim().isEmpty) return;
     final trimmed = text.trim();
     _lastUserMessage = trimmed;
+    final userMessageId = DateTime.now().microsecondsSinceEpoch;
+    _lastUserMessageId = userMessageId;
 
     messages.add(AiMessageModel(
-      id: DateTime.now().microsecondsSinceEpoch,
+      id: userMessageId,
       sessionId: currentSessionId ?? 0,
       role: 'user',
       message: trimmed,
@@ -150,30 +153,46 @@ class AiProvider extends ChangeNotifier {
   }
 
   /// Re-sends the last user message (used by ChatBubble's "Retry" action).
+  ///
+  /// QA fix ("Retry should remove only the last failed message"): this
+  /// used to call `removeWhere((m) => m.isUser && m.message ==
+  /// _lastUserMessage)`, which deletes EVERY user message with that exact
+  /// text anywhere in the conversation - if the user had asked the same
+  /// question twice, retrying the second one silently erased the first
+  /// one too. Now removes by the specific message ID that was sent.
   Future<void> retryLast() async {
-    if (_lastUserMessage.isEmpty) return;
-    messages.removeWhere((m) => m.isUser && m.message == _lastUserMessage);
+    if (_lastUserMessage.isEmpty || _lastUserMessageId == null) return;
+    messages.removeWhere((m) => m.id == _lastUserMessageId);
     await sendMessage(_lastUserMessage);
   }
 
   /// Regenerates a specific assistant reply: removes that assistant
   /// message (and the user message that prompted it), then re-sends the
   /// same question fresh - used by ChatBubble's "Regenerate" action.
+  ///
+  /// QA fix ("Regenerate should preserve previous history"): this used
+  /// to call `removeWhere((m) => m.isUser && m.message == userText)`,
+  /// which deletes EVERY user message with that exact text anywhere in
+  /// the conversation - asking "what is x?" twice and regenerating the
+  /// second reply would also silently delete the FIRST occurrence from
+  /// history. Now removes only the specific message at the index found.
   Future<void> regenerate(int assistantMessageId) async {
     final idx = messages.indexWhere((m) => m.id == assistantMessageId);
     if (idx <= 0) return;
 
     String? userText;
+    int? userIndex;
     for (var i = idx - 1; i >= 0; i--) {
       if (messages[i].isUser) {
         userText = messages[i].message;
+        userIndex = i;
         break;
       }
     }
-    if (userText == null) return;
+    if (userText == null || userIndex == null) return;
 
     messages.removeAt(idx);
-    messages.removeWhere((m) => m.isUser && m.message == userText);
+    messages.removeAt(userIndex);
     await sendMessage(userText);
   }
 

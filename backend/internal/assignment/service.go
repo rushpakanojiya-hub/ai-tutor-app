@@ -10,8 +10,8 @@ import (
 	"ai-tutor-backend/internal/ai"
 	"ai-tutor-backend/internal/badge"
 	"ai-tutor-backend/internal/streak"
-	"ai-tutor-backend/internal/xp"
 	"ai-tutor-backend/internal/subjects"
+	"ai-tutor-backend/internal/xp"
 )
 
 type Service struct {
@@ -242,7 +242,21 @@ Evaluate this answer and return ONLY a JSON object with exactly this shape:
 		return fmt.Errorf("invalid JSON from Groq: %w", err)
 	}
 
-	return s.repo.SaveAIEvaluation(submissionID, result.Score, a.MaxMarks, result.Strengths, result.Weaknesses, result.MissingConcepts, result.Suggestions)
+	// QA fix ("Clamp AI score within valid marks"): the prompt asks Groq
+	// for an integer from 0 to MaxMarks, but nothing enforced that - an
+	// LLM can (and occasionally does) return a score outside that range,
+	// which then produced a nonsensical percentage (e.g. >100%, or
+	// negative) shown directly to the student. Clamp it to the valid
+	// range before it's ever saved.
+	score := result.Score
+	if score < 0 {
+		score = 0
+	}
+	if score > a.MaxMarks {
+		score = a.MaxMarks
+	}
+
+	return s.repo.SaveAIEvaluation(submissionID, score, a.MaxMarks, result.Strengths, result.Weaknesses, result.MissingConcepts, result.Suggestions)
 }
 
 func (s *Service) GetMySubmission(assignmentID, studentID int) (*Submission, error) {

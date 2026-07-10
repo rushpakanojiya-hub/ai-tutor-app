@@ -143,6 +143,11 @@ class _DashboardHomeState extends State<_DashboardHome> {
     try {
       _unreadNotifications = await _notificationService.fetchUnreadCount();
     } catch (_) {}
+    // QA fix ("Missing mounted checks after async operations"): this
+    // context.read<AuthProvider>() ran after several awaits above with
+    // no mounted guard - if the user had navigated away mid-fetch, this
+    // threw on a deactivated widget's context.
+    if (!mounted) return;
     if (context.read<AuthProvider>().currentUser?.role == 'student') {
       try {
         _pendingAssignments = (await _assignmentService.fetchForStudent())
@@ -232,7 +237,7 @@ class _DashboardHomeState extends State<_DashboardHome> {
             customBorder: const CircleBorder(),
             onTap: () async {
               await context.push('/notifications');
-              _load();
+              if (mounted) _load();
             },
             child: Container(
               width: 48,

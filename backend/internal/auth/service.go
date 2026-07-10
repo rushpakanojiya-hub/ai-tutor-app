@@ -134,10 +134,41 @@ func (s *Service) ListPendingTeachers() ([]TeacherApplication, error) {
 	return s.repo.ListTeacherApplications(StatusPending)
 }
 
+// ErrNotATeacherApplication is returned by ApproveTeacher/RejectTeacher
+// when the target user isn't a teacher, or isn't currently pending -
+// e.g. calling approve on a student account, or on a teacher who was
+// already approved/rejected.
+var ErrNotATeacherApplication = errors.New("this user is not a pending teacher application")
+
+// ApproveTeacher validates the target is an actual pending teacher
+// application before approving it.
+//
+// QA fix ("Teacher approval validation"): previously called
+// UpdateUserStatus directly with no checks at all - any user ID could
+// be "approved" regardless of role or current status, including
+// students, already-active teachers, or already-rejected applications.
 func (s *Service) ApproveTeacher(userID int) error {
+	user, err := s.repo.FindByID(userID)
+	if err != nil {
+		return err
+	}
+	if user.Role != "teacher" || user.Status != StatusPending {
+		return ErrNotATeacherApplication
+	}
 	return s.repo.UpdateUserStatus(userID, StatusActive)
 }
 
+// RejectTeacher validates the target is an actual pending teacher
+// application before rejecting it.
+//
+// QA fix ("Teacher rejection validation"): same gap as ApproveTeacher.
 func (s *Service) RejectTeacher(userID int) error {
+	user, err := s.repo.FindByID(userID)
+	if err != nil {
+		return err
+	}
+	if user.Role != "teacher" || user.Status != StatusPending {
+		return ErrNotATeacherApplication
+	}
 	return s.repo.UpdateUserStatus(userID, StatusRejected)
 }

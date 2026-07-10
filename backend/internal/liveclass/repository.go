@@ -129,7 +129,7 @@ func (r *Repository) Delete(classID, teacherID int) error {
 // computedStatus turns a stored 'scheduled' row into 'missed' once its
 // end time has passed, without needing a background job.
 const computedStatusExpr = `
-	CASE WHEN lc.status = 'scheduled' AND (lc.class_date + lc.end_time) < now() THEN 'missed' ELSE lc.status END
+	CASE WHEN lc.status = 'scheduled' AND lc.meeting_status != 'live' AND (lc.class_date + lc.end_time) < now() THEN 'missed' ELSE lc.status END
 `
 
 const liveClassSelect = `

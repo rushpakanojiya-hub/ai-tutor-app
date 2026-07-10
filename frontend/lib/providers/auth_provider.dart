@@ -18,6 +18,27 @@ class AuthProvider extends ChangeNotifier {
   bool isLoading = false;
   String? errorMessage;
 
+  // QA fix ("Router rebuild issue"): app_router.dart used to pass this
+  // whole AuthProvider as GoRouter's refreshListenable, so EVERY
+  // notifyListeners() call here - including ones that only change
+  // isLoading for a button spinner, with status untouched - triggered a
+  // full router redirect re-evaluation and route rebuild. statusNotifier
+  // is a dedicated ValueNotifier that only fires when `status` itself
+  // actually changes (ValueNotifier's built-in equality check), and
+  // app_router.dart now listens to this instead of the whole provider.
+  final ValueNotifier<AuthStatus> statusNotifier = ValueNotifier(AuthStatus.unknown);
+
+  void _setStatus(AuthStatus newStatus) {
+    status = newStatus;
+    statusNotifier.value = newStatus;
+  }
+
+  @override
+  void dispose() {
+    statusNotifier.dispose();
+    super.dispose();
+  }
+
   /// Called once at app startup to check for a previously saved session.
   Future<void> tryAutoLogin() async {
     final token = await _storage.getString(AppConstants.keyAuthToken);
@@ -27,9 +48,9 @@ class AuthProvider extends ChangeNotifier {
 
     if (token != null && userId != null && userName != null && userRole != null) {
       currentUser = UserModel(id: userId, name: userName, role: userRole);
-      status = AuthStatus.authenticated;
+      _setStatus(AuthStatus.authenticated);
     } else {
-      status = AuthStatus.unauthenticated;
+      _setStatus(AuthStatus.unauthenticated);
     }
     notifyListeners();
   }
@@ -80,14 +101,14 @@ class AuthProvider extends ChangeNotifier {
       await _storage.setString(AppConstants.keyUserRole, result.user.role);
 
       currentUser = result.user;
-      status = AuthStatus.authenticated;
+      _setStatus(AuthStatus.authenticated);
     });
   }
 
   Future<void> logout() async {
     await _storage.clearAll();
     currentUser = null;
-    status = AuthStatus.unauthenticated;
+    _setStatus(AuthStatus.unauthenticated);
     notifyListeners();
   }
 

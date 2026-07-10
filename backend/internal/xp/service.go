@@ -57,14 +57,24 @@ func (s *Service) AwardDailyStudy(studentID int) {
 }
 
 // checkAndAwardStudyStreak awards a bonus once per completed 7-day
-// block (7, 14, 21...) - deduped by milestone number so it never
-// double-fires.
-func (s *Service) checkAndAwardStudyStreak(studentID, currentStreakDays int) {
+// block (7, 14, 21...) WITHIN the current unbroken streak run.
+//
+// QA fix ("Fix study streak reward logic"): the dedup key used to be
+// just "streak-milestone-N", with no reference to WHICH streak run
+// reached that milestone. Since the key never changes for a given N,
+// a student who broke their streak and later built a brand new 7-day
+// run again could never be rewarded for milestone 1 a second time -
+// the UNIQUE constraint in AwardXP silently no-opped it forever after
+// the very first time. Including the run's start date makes each
+// distinct streak run's key unique, so genuinely new achievements are
+// rewarded every time, while still never double-paying the same run.
+func (s *Service) checkAndAwardStudyStreak(studentID, currentStreakDays int, streakStartDate time.Time) {
 	milestone := currentStreakDays / 7
 	if milestone < 1 {
 		return
 	}
-	_ = s.repo.AwardXP(studentID, ActivityStudyStreak, fmt.Sprintf("streak-milestone-%d", milestone), XPStudyStreak, PointsStudyStreak)
+	key := fmt.Sprintf("streak-milestone-%d-start-%s", milestone, streakStartDate.Format("2006-01-02"))
+	_ = s.repo.AwardXP(studentID, ActivityStudyStreak, key, XPStudyStreak, PointsStudyStreak)
 }
 
 // OnStudyActivity is the single hook called from quiz/assignment/
@@ -74,8 +84,8 @@ func (s *Service) checkAndAwardStudyStreak(studentID, currentStreakDays int) {
 func (s *Service) OnStudyActivity(studentID int) {
 	s.AwardDailyStudy(studentID)
 	if s.streakRepo != nil {
-		if current, err := s.streakRepo.GetCurrentStreak(studentID); err == nil {
-			s.checkAndAwardStudyStreak(studentID, current)
+		if current, startDate, err := s.streakRepo.GetCurrentStreakWithStartDate(studentID); err == nil {
+			s.checkAndAwardStudyStreak(studentID, current, startDate)
 		}
 	}
 }

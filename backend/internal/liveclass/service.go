@@ -2,6 +2,7 @@ package liveclass
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -10,6 +11,12 @@ import (
 	"ai-tutor-backend/internal/livekit"
 	"ai-tutor-backend/internal/notification"
 )
+
+// ErrInvalidTimeRange is returned when a class's end time is not after
+// its start time (QA fix: "Validate End Time > Start Time" - this was
+// never checked at all, so a class could be scheduled with an end time
+// before or equal to its start time).
+var ErrInvalidTimeRange = errors.New("end time must be after start time")
 
 type Service struct {
 	repo            *Repository
@@ -24,7 +31,29 @@ func NewService(repo *Repository, notificationSvc *notification.Service, tokenSv
 	return &Service{repo: repo, notificationSvc: notificationSvc, tokenSvc: tokenSvc, roomClient: roomClient, livekitURL: livekitURL, badgeSvc: badgeSvc}
 }
 
+// validateTimeRange parses "HH:MM" start/end strings and confirms end
+// is strictly after start. Invalid/unparseable times are left for the
+// existing required-field validation to catch elsewhere - this only
+// rejects a well-formed but backwards range.
+func validateTimeRange(startTime, endTime string) error {
+	start := parseTimeParts(startTime)
+	end := parseTimeParts(endTime)
+	if start == nil || end == nil {
+		return nil
+	}
+	startMinutes := start[0]*60 + start[1]
+	endMinutes := end[0]*60 + end[1]
+	if endMinutes <= startMinutes {
+		return ErrInvalidTimeRange
+	}
+	return nil
+}
+
 func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
+	if err := validateTimeRange(req.StartTime, req.EndTime); err != nil {
+		return 0, err
+	}
+
 	// The "Public" toggle has been removed from the schedule form - every
 	// class stays visible to students by default (unchanged existing
 	// behavior), regardless of what the client sends for this field.
@@ -44,6 +73,11 @@ func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
 }
 
 func (s *Service) Update(classID, teacherID int, req UpdateRequest) error {
+	if req.StartTime != nil && req.EndTime != nil {
+		if err := validateTimeRange(*req.StartTime, *req.EndTime); err != nil {
+			return err
+		}
+	}
 	return s.repo.Update(classID, teacherID, req)
 }
 

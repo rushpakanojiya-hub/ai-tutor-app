@@ -143,3 +143,13 @@ func (r *Repository) RecentMessages(sessionID, limit int) ([]ChatMessage, error)
 	}
 	return result, nil
 }
+
+// QA fix ("Roll back failed AI messages"): added so the Service can undo
+// a saved user message if the Groq call that was supposed to follow it
+// fails - without this, there was no way to remove the now-orphaned
+// message and the conversation was left inconsistent (a question with
+// no reply, permanently).
+func (r *Repository) DeleteMessage(messageID int) error {
+	_, err := r.db.Exec(`DELETE FROM ai_chat_messages WHERE id = $1`, messageID)
+	return err
+}

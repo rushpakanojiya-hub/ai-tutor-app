@@ -26,6 +26,23 @@ class ApiConstants {
   static const String certificatesTeacher = '/certificates/teacher';
   static const String certificatesAll = '/certificates/all';
   static String certificate(int id) => '/certificates/$id';
+  static String adminCourses({String? search, int? categoryId, String? status}) {
+    var path = '/admin/courses?';
+    final params = <String>[];
+    if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeQueryComponent(search)}');
+    if (categoryId != null) params.add('category_id=$categoryId');
+    if (status != null && status.isNotEmpty) params.add('status=$status');
+    return path + params.join('&');
+  }
+  static String course(int id) => '/subjects/$id';
+  static String coursePublish(int id) => '/subjects/$id/publish';
+  static String courseUnpublish(int id) => '/subjects/$id/unpublish';
+  static String categoryUpdate(int id) => '/categories/$id';
+  static const String lessonsCreate = '/lessons';
+  static String lessonsReorder(int subjectId) => '/subjects/$subjectId/lessons/reorder';
+  static String lessonUploadVideo(int id) => '/lessons/$id/upload-video';
+  static String lessonUploadPdf(int id) => '/lessons/$id/upload-pdf';
+  static String lessonUploadAssignment(int id) => '/lessons/$id/upload-assignment';
   static const String teacherApply = '/auth/teacher/apply';
   static const String login = '/auth/login';
   static const String profile = '/auth/profile';

@@ -143,8 +143,12 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 			c.markBlocked(idx)
 			continue
 		}
-		// Non-quota error (network, 5xx, etc.) — don't burn through all keys, just fail.
+		// Non-quota error (network, 5xx, etc.) â€” don't burn through all keys, just fail.
 		return nil, err
+	}
+
+	if attempted == 0 {
+		return nil, fmt.Errorf("youtube: all configured API keys are currently in cooldown")
 	}
 
 	if lastErr != nil && len(sr.Items) == 0 {
@@ -239,7 +243,7 @@ func (c *Client) markBlocked(idx int) {
 	defer c.mu.Unlock()
 	// YouTube daily quota resets at midnight Pacific time; a short cooldown
 	// here just prevents hammering the same exhausted key within this
-	// process's lifetime — restart or next day naturally clears it.
+	// process's lifetime â€” restart or next day naturally clears it.
 	c.blockedUntil[idx] = time.Now().Add(6 * time.Hour)
 }
 

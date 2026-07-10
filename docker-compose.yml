@@ -1,0 +1,52 @@
+# Run from the project root (C:\Users\ABC\Desktop\ai_tutor_app):
+#   docker compose up --build
+#
+# Two services: a Postgres database (with a named volume so data survives
+# container restarts) and the Go backend (built from backend/Dockerfile,
+# which already exists and already supports DATABASE_URL for exactly
+# this scenario).
+#
+# The backend's own .env file is still loaded for secrets (JWT_SECRET,
+# GROQ_API_KEY, LIVEKIT_*, CLOUDINARY_*) - only DATABASE_URL is
+# overridden below so the backend reaches Postgres by its service name
+# ("postgres") instead of "localhost", which only works outside Docker.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_tutor_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_tutor_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5433:5432"
+    volumes:
+      - ai_tutor_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai_tutor_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides whatever DB_HOST/DATABASE_URL is in .env - inside Docker,
+      # Postgres is reached by its service name, not localhost.
+      DATABASE_URL: "postgres://postgres:root@postgres:5432/ai_tutor_db?sslmode=disable"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ai_tutor_pgdata:

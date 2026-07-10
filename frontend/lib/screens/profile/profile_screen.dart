@@ -10,6 +10,7 @@ import '../badges/my_badges_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
 import '../leaderboard/manage_students_screen.dart';
 import '../certificates/my_certificates_screen.dart';
+import '../courses/admin_course_management_screen.dart';
 
 /// Profile tab: shows the logged-in user's info and a logout button.
 /// UI redesign only â€” AuthProvider.logout() and the navigation after it
@@ -151,6 +152,14 @@ class ProfileScreen extends StatelessWidget {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const MyCertificatesScreen(mode: CertificateListMode.admin)));
               },
             ).animate().fadeIn(duration: 250.ms, delay: 156.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.library_books_rounded,
+              label: 'Course Management',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminCourseManagementScreen()));
+              },
+            ).animate().fadeIn(duration: 250.ms, delay: 157.ms),
           ],
           const SizedBox(height: 12),
           _ProfileMenuTile(

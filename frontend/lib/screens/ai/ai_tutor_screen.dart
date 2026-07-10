@@ -55,7 +55,13 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
     } catch (_) {
       _subjects = [];
     }
-    if (mounted) setState(() => _loadingSubjects = false);
+    // QA fix ("Missing mounted checks after async operations" / "Safe
+    // BuildContext usage"): context.read<AiProvider>() below used to run
+    // unconditionally right after an await - if the user had already
+    // navigated away while fetchAllSubjects() was in flight, this threw
+    // "Looking up a deactivated widget's ancestor is unsafe."
+    if (!mounted) return;
+    setState(() => _loadingSubjects = false);
 
     final provider = context.read<AiProvider>();
     provider.loadSessions();
@@ -132,6 +138,7 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
       return;
     }
     if (file == null) return;
+    if (!mounted) return;
 
     setState(() => _extractingImage = true);
     final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
@@ -280,7 +287,7 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
           onTap: () async {
             Navigator.of(context).pop();
             await provider.loadSessionIntoChat(session.id);
-            _scrollToBottom();
+            if (mounted) _scrollToBottom();
           },
         );
       },

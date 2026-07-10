@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"log"
 
 	"ai-tutor-backend/internal/streak"
 	"ai-tutor-backend/internal/subjects"
@@ -41,11 +42,21 @@ func (s *Service) resolveSession(userID int, req ChatRequest) (int, error) {
 		return session.ID, nil
 	}
 
-	title := req.Message
-	if len(title) > 50 {
-		title = title[:50] + "..."
-	}
+	title := truncateTitle(req.Message, 50)
 	return s.repo.CreateSession(userID, req.SubjectID, title)
+}
+
+// truncateTitle cuts a session title to at most maxRunes RUNES (not
+// bytes) - QA fix ("UTF-8 title truncation"): the previous version did
+// title[:50], a BYTE slice. For Hindi/Marathi messages (which this app
+// explicitly supports), a multi-byte UTF-8 character sitting right at
+// that boundary got sliced in half, producing a mangled/invalid title.
+func truncateTitle(message string, maxRunes int) string {
+	runes := []rune(message)
+	if len(runes) <= maxRunes {
+		return message
+	}
+	return string(runes[:maxRunes]) + "..."
 }
 
 // subjectName resolves a subject_id into its display name for the system
@@ -65,6 +76,15 @@ func (s *Service) subjectName(subjectID *int) string {
 // Chat handles one turn: resolves/creates the session, loads the last 10
 // messages as context, sends everything to Groq, saves both the
 // student's message and the AI's reply, and returns the reply.
+//
+// QA fix ("Roll back failed AI messages" / "Preserve chat consistency"):
+// the student's message used to be saved to the DB BEFORE calling Groq,
+// with no cleanup if that call then failed - leaving a permanently
+// orphaned question with no reply sitting in the conversation. If Groq
+// fails now, the just-saved user message is deleted so the session's
+// history stays consistent (every stored user message has a reply);
+// the caller sees the original error and the message text is still in
+// their input box to retry, unchanged from before.
 func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatResponse, error) {
 	sessionID, err := s.resolveSession(userID, req)
 	if err != nil {
@@ -78,7 +98,8 @@ func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatR
 		return nil, err
 	}
 
-	if _, err := s.repo.AddMessage(sessionID, "user", req.Message); err != nil {
+	userMessageID, err := s.repo.AddMessage(sessionID, "user", req.Message)
+	if err != nil {
 		return nil, err
 	}
 
@@ -87,6 +108,9 @@ func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatR
 
 	reply, err := s.groqClient.Chat(ctx, messages)
 	if err != nil {
+		if rollbackErr := s.repo.DeleteMessage(userMessageID); rollbackErr != nil {
+			log.Printf("[ai] failed to roll back orphaned user message %d after Groq error: %v", userMessageID, rollbackErr)
+		}
 		if errors.Is(err, ErrNoAPIKey) {
 			return nil, ErrAINotConfigured
 		}

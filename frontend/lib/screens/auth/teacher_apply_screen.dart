@@ -153,7 +153,12 @@ class _TeacherApplyScreenState extends State<TeacherApplyScreen> {
                   controller: _confirmPasswordController,
                   isPassword: true,
                   prefixIcon: Icons.lock_outline,
-                  validator: Validators.validatePassword,
+                  validator: (value) {
+                      final formatError = Validators.validatePassword(value);
+                      if (formatError != null) return formatError;
+                      if (value != _passwordController.text) return 'Passwords do not match';
+                      return null;
+                    },
                 ),
                 CustomTextField(
                   label: 'Phone Number',
