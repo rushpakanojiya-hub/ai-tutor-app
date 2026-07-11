@@ -220,12 +220,12 @@ class _DashboardHomeState extends State<_DashboardHome> {
               Text(
                 'Hello, $name \u{1F44B}',
                 style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.2),
-              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.1, end: 0),
+              ).animate().fadeIn(duration: 220.ms).slideY(begin: 0.1, end: 0),
               const SizedBox(height: 8),
               const Text(
                 'Ready to continue your learning journey?',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-              ).animate().fadeIn(duration: 350.ms, delay: 80.ms),
+              ).animate().fadeIn(duration: 220.ms, delay: 80.ms),
             ],
           ),
         ),
@@ -388,16 +388,16 @@ class _DashboardHomeState extends State<_DashboardHome> {
           ),
         ),
       ),
-    ).animate().fadeIn(duration: 300.ms, delay: 60.ms);
+    ).animate().fadeIn(duration: 220.ms, delay: 60.ms);
   }
 
   /// 2x2 grid (not a cramped 4-in-a-row) so titles/subtitles never overflow.
   Widget _buildQuickAccessGrid() {
     final cards = [
-      _QuickAccessData(Icons.menu_book_rounded, 'My Courses', 'Continue learning', AppColors.purpleLight, AppColors.purple, () => context.push('/categories')),
-      _QuickAccessData(Icons.smart_toy_rounded, 'AI Tutor', 'Ask anything', AppColors.orangeLight, AppColors.orange, () => context.push('/ai-tutor')),
-      _QuickAccessData(Icons.help_outline_rounded, 'Quiz', 'Test your knowledge', AppColors.blueLight, AppColors.blue, () => context.push('/ai-quiz-generator')),
-      _QuickAccessData(Icons.trending_up_rounded, 'Progress', 'Track your growth', AppColors.greenLight, AppColors.green, () => context.push('/quiz-analytics')),
+      _QuickAccessData(Icons.menu_book_rounded, 'My Courses', 'Continue learning', const Color(0xFF6D5DF6), const Color(0xFF5B4CF0), () => context.push('/categories')),
+      _QuickAccessData(Icons.smart_toy_rounded, 'AI Tutor', 'Ask anything', const Color(0xFFFF7A18), const Color(0xFFFF5A3D), () => context.push('/ai-tutor')),
+      _QuickAccessData(Icons.help_outline_rounded, 'Quiz', 'Test your knowledge', const Color(0xFF3B82F6), const Color(0xFF2563EB), () => context.push('/ai-quiz-generator')),
+      _QuickAccessData(Icons.trending_up_rounded, 'Progress', 'Track your growth', const Color(0xFF22C55E), const Color(0xFF16A34A), () => context.push('/quiz-analytics')),
     ];
 
     return GridView.count(
@@ -409,7 +409,7 @@ class _DashboardHomeState extends State<_DashboardHome> {
       childAspectRatio: 170 / 150,
       children: [
         for (var i = 0; i < cards.length; i++)
-          _QuickAccessCard(data: cards[i]).animate().fadeIn(duration: 300.ms, delay: (100 + i * 60).ms).slideY(begin: 0.15, end: 0),
+          _QuickAccessCard(data: cards[i]).animate().fadeIn(duration: 220.ms, delay: (100 + i * 60).ms).slideY(begin: 0.15, end: 0),
       ],
     );
   }
@@ -423,8 +423,8 @@ class _DashboardHomeState extends State<_DashboardHome> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(colors: [Color(0xFFA78BFA), Color(0xFF7C5CFC)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        boxShadow: [BoxShadow(color: AppColors.purple.withOpacity(0.3), blurRadius: 24, offset: const Offset(0, 10))],
+        gradient: const LinearGradient(colors: [Color(0xFF7C5CFF), Color(0xFF5B3DF5)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        boxShadow: [BoxShadow(color: const Color(0xFF5B3DF5).withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 8))],
       ),
       child: Row(
         children: [
@@ -459,7 +459,7 @@ class _DashboardHomeState extends State<_DashboardHome> {
           const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 56),
         ],
       ),
-    ).animate().fadeIn(duration: 300.ms, delay: 300.ms).scale(begin: const Offset(0.96, 0.96), end: const Offset(1, 1));
+    ).animate().fadeIn(duration: 220.ms, delay: 300.ms).scale(begin: const Offset(0.96, 0.96), end: const Offset(1, 1));
   }
 
   Widget _sectionHeader(String title, {required VoidCallback onSeeAll}) {
@@ -520,7 +520,7 @@ class _DashboardHomeState extends State<_DashboardHome> {
             ),
           )
           .toList(),
-    ).animate().fadeIn(duration: 300.ms, delay: 340.ms);
+    ).animate().fadeIn(duration: 220.ms, delay: 340.ms);
   }
 
   Widget _buildStatsGrid() {
@@ -584,10 +584,10 @@ class _QuickAccessData {
   final IconData icon;
   final String title;
   final String subtitle;
-  final Color bg;
-  final Color color;
+  final Color gradientStart;
+  final Color gradientEnd;
   final VoidCallback onTap;
-  _QuickAccessData(this.icon, this.title, this.subtitle, this.bg, this.color, this.onTap);
+  _QuickAccessData(this.icon, this.title, this.subtitle, this.gradientStart, this.gradientEnd, this.onTap);
 }
 
 class _QuickAccessCard extends StatelessWidget {
@@ -596,42 +596,51 @@ class _QuickAccessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: data.bg,
-      borderRadius: BorderRadius.circular(24),
-      child: InkWell(
+    return Container(
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        onTap: data.onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(color: data.color, borderRadius: BorderRadius.circular(14)),
-                child: Icon(data.icon, color: Colors.white, size: 22),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(data.title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: data.color), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 3),
-                  Text(data.subtitle, style: TextStyle(fontSize: 12, color: data.color.withOpacity(0.8)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(color: data.color, shape: BoxShape.circle),
-                  child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
+        gradient: LinearGradient(colors: [data.gradientStart, data.gradientEnd], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        boxShadow: [BoxShadow(color: data.gradientEnd.withOpacity(0.28), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: data.onTap,
+          splashColor: Colors.white.withOpacity(0.15),
+          highlightColor: Colors.white.withOpacity(0.08),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.15), borderRadius: BorderRadius.circular(14)),
+                  child: Icon(data.icon, color: Colors.white, size: 22),
                 ),
-              ),
-            ],
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(data.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 3),
+                    Text(data.subtitle, style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.85)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                    child: Icon(Icons.arrow_forward_rounded, color: data.gradientStart, size: 16),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

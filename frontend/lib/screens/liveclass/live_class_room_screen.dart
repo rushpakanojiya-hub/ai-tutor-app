@@ -1053,6 +1053,38 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_connecting || _error != null) {
+          if (mounted) Navigator.of(context).pop();
+          return;
+        }
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Leave this class?'),
+            content: const Text('You will be disconnected from the live session.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Stay')),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Leave', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true && mounted) {
+          // ignore: use_build_context_synchronously
+          Navigator.of(context).pop();
+        }
+      },
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     if (_connecting) {
       return const Scaffold(
         backgroundColor: Colors.black,

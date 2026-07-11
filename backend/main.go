@@ -1,4 +1,4 @@
-// AI Tutor Backend Ã¢â‚¬â€ Day 2 (Course & Learning Management added)
+// AI Tutor Backend ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Day 2 (Course & Learning Management added)
 // Boots the Gin server, connects to PostgreSQL, and wires up all modules
 // using Clean Architecture (handler -> service -> repository -> model).
 package main
@@ -48,10 +48,10 @@ func main() {
 	defer db.Close()
 
 	router := gin.Default()
-	router.Use(middleware.CORSMiddleware())
+	router.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 
 	// Serves lesson PDF notes from backend/static/notes/*.pdf as
-	// http://<host>:<port>/static/notes/<file>.pdf Ã¢â‚¬â€ real, self-hosted
+	// http://<host>:<port>/static/notes/<file>.pdf ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â real, self-hosted
 	// content instead of random third-party URLs (see migration 000014).
 	router.Static("/static", "./static")
 
@@ -156,7 +156,7 @@ func main() {
 	recommendationsService := recommendations.NewService(recommendationsRepo)
 	recommendationsHandler := recommendations.NewHandler(recommendationsService)
 
-	// search reuses the categories/subjects/lessons/aicontent repositories directly Ã¢â‚¬â€
+	// search reuses the categories/subjects/lessons/aicontent repositories directly ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
 	// no separate "search" table exists, it's a fan-out query.
 	searchService := search.NewService(categoriesRepo, subjectsRepo, lessonsRepo, aiContentRepo)
 	searchHandler := search.NewHandler(searchService)
@@ -218,7 +218,7 @@ func main() {
 	resource.RegisterRoutes(api, resourceHandler, authMiddleware, middleware.RequireTeacher())
 	notification.RegisterRoutes(api, notificationHandler, authMiddleware)
 
-	// Role-gated routes are still intentionally absent (see Day 1 notes) Ã¢â‚¬â€
+	// Role-gated routes are still intentionally absent (see Day 1 notes) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
 	// when an admin dashboard exists, the POST endpoints above (create
 	// category/subject/lesson/note) should switch to
 	// middleware.RequireAdmin() instead of the plain authMiddleware.

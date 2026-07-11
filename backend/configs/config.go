@@ -58,6 +58,13 @@ type Config struct {
 	CloudinaryCloudName string
 	CloudinaryAPIKey    string
 	CloudinaryAPISecret string
+
+	// Security audit fix (High: "CORS") - configurable list of allowed
+	// origins instead of a hardcoded wildcard ("*"). Only affects
+	// browser-based clients (CORS is not enforced for native mobile
+	// HTTP requests) - set to the real deployed web domain(s) when one
+	// exists.
+	AllowedOrigins []string
 }
 
 // LoadConfig reads the .env file (if present) and environment variables,
@@ -102,6 +109,8 @@ func LoadConfig() *Config {
 		CloudinaryCloudName: getEnv("CLOUDINARY_CLOUD_NAME", ""),
 		CloudinaryAPIKey:    getEnv("CLOUDINARY_API_KEY", ""),
 		CloudinaryAPISecret: getEnv("CLOUDINARY_API_SECRET", ""),
+
+		AllowedOrigins: parseCommaList(getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080")),
 	}
 
 	// Security fix (QA: "Hardcoded JWT secret") - the old code always fell

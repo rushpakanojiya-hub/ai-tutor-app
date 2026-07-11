@@ -203,6 +203,10 @@ class AppRouter {
       // recommendations + homework mode, all in one) ---
       GoRoute(path: '/ai-tutor', builder: (context, state) => const AiTutorScreen()),
     ],
+    // Routing fix ("Invalid Routes"): GoRouter's default error screen for
+    // an unknown path is a bare, unstyled error page. This redirects any
+    // unmatched route straight to the dashboard instead of showing that.
+    errorBuilder: (context, state) => const DashboardScreen(),
     redirect: (context, state) {
       final status = authProvider.status;
       final loggingIn = state.matchedLocation == '/login' ||
@@ -219,6 +223,24 @@ class AppRouter {
       if (status == AuthStatus.authenticated && (loggingIn || onSplash)) {
         return '/dashboard';
       }
+
+      // Routing fix ("Role-based Routing"): admin-only and teacher-only
+      // routes previously had no guard at the router level at all - only
+      // the Profile screen's conditional tiles kept most users from ever
+      // tapping into them, but a stray deep link or button reaching one
+      // directly (e.g. a student navigating to /admin-dashboard) would
+      // land them on a real screen that then just failed its admin-only
+      // API calls with 403s, instead of being redirected cleanly.
+      final role = authProvider.currentUser?.role;
+      final isAdminRoute = state.matchedLocation.startsWith('/admin-');
+      if (isAdminRoute && role != 'admin') {
+        return '/dashboard';
+      }
+      const teacherOnlyRoutes = {'/create-assignment', '/create-live-class'};
+      if (teacherOnlyRoutes.contains(state.matchedLocation) && role != 'teacher' && role != 'admin') {
+        return '/dashboard';
+      }
+
       return null;
     },
   );

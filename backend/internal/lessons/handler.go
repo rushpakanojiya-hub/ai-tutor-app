@@ -2,9 +2,12 @@ package lessons
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -157,11 +160,34 @@ func (h *Handler) Reorder(c *gin.Context) {
 
 const maxUploadMultipartMemory = 25 << 20 // 25MB, matches MaxUploadSizeBytes
 
-func readUploadedFile(c *gin.Context) ([]byte, string, error) {
+// Security audit fix (High: "File Upload Security"): the previous
+// version accepted whatever c.FormFile("file") returned with no size
+// check and no extension/type check at all server-side - only the
+// Flutter client's FilePicker restricted extensions, which is trivial
+// to bypass with a direct API call (e.g. curl). readUploadedFile now
+// takes the caller's allowed extensions and enforces both the 25MB cap
+// and the extension whitelist before ever reading the file into memory
+// or forwarding it to Cloudinary.
+func readUploadedFile(c *gin.Context, allowedExtensions []string) ([]byte, string, error) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		return nil, "", err
 	}
+	if file.Size > maxUploadMultipartMemory {
+		return nil, "", fmt.Errorf("file exceeds the 25MB limit")
+	}
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowed := false
+	for _, a := range allowedExtensions {
+		if ext == a {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return nil, "", fmt.Errorf("file type %s is not allowed", ext)
+	}
+
 	f, err := file.Open()
 	if err != nil {
 		return nil, "", err
@@ -184,9 +210,9 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
 		return
 	}
-	fileBytes, filename, err := readUploadedFile(c)
+	fileBytes, filename, err := readUploadedFile(c, []string{".mp4", ".mov"})
 	if err != nil {
-		utils.RespondError(c, http.StatusBadRequest, "A video file is required")
+		utils.RespondError(c, http.StatusBadRequest, "A valid video file (mp4/mov, up to 25MB) is required")
 		return
 	}
 	url, err := h.service.UploadVideo(id, fileBytes, filename)
@@ -207,9 +233,9 @@ func (h *Handler) UploadPDF(c *gin.Context) {
 		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
 		return
 	}
-	fileBytes, filename, err := readUploadedFile(c)
+	fileBytes, filename, err := readUploadedFile(c, []string{".pdf"})
 	if err != nil {
-		utils.RespondError(c, http.StatusBadRequest, "A PDF file is required")
+		utils.RespondError(c, http.StatusBadRequest, "A valid PDF file (up to 25MB) is required")
 		return
 	}
 	url, err := h.service.UploadPDF(id, fileBytes, filename)
@@ -230,9 +256,9 @@ func (h *Handler) UploadAssignment(c *gin.Context) {
 		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
 		return
 	}
-	fileBytes, filename, err := readUploadedFile(c)
+	fileBytes, filename, err := readUploadedFile(c, []string{".pdf", ".doc", ".docx"})
 	if err != nil {
-		utils.RespondError(c, http.StatusBadRequest, "An assignment file is required")
+		utils.RespondError(c, http.StatusBadRequest, "A valid assignment file (pdf/doc/docx, up to 25MB) is required")
 		return
 	}
 	url, err := h.service.UploadAssignment(id, fileBytes, filename)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,12 +23,18 @@ func NewHandler(service *Service) *Handler {
 }
 
 // RegisterRoutes attaches all /api/auth/* routes to the given router group.
+//
+// Security audit fix (High: "Rate Limiting"): /register, /teacher/apply,
+// and /login had no rate limiting at all - brute-force password
+// guessing on /login, and registration/application spam, were both
+// trivially easy. Now limited per client IP (login is stricter since
+// it's the classic brute-force target).
 func (h *Handler) RegisterRoutes(router *gin.RouterGroup, authMiddleware gin.HandlerFunc) {
 	authGroup := router.Group("/auth")
 	{
-		authGroup.POST("/register", h.Register)
-		authGroup.POST("/teacher/apply", h.ApplyAsTeacher)
-		authGroup.POST("/login", h.Login)
+		authGroup.POST("/register", middleware.AuthRateLimitMiddleware(5, time.Hour), h.Register)
+		authGroup.POST("/teacher/apply", middleware.AuthRateLimitMiddleware(5, time.Hour), h.ApplyAsTeacher)
+		authGroup.POST("/login", middleware.AuthRateLimitMiddleware(8, 15*time.Minute), h.Login)
 		authGroup.GET("/profile", authMiddleware, h.Profile)
 
 		// Admin-only teacher approval queue - no dedicated admin UI yet,
