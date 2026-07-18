@@ -1,4 +1,4 @@
-import '../core/constants/api_constants.dart';
+﻿import '../core/constants/api_constants.dart';
 import '../models/quiz_attempt_model.dart';
 import 'api_service.dart';
 
@@ -34,10 +34,15 @@ class QuizService {
       if (subjectId != null) 'subject_id': subjectId,
       'topic': topic,
       'time_taken_seconds': timeTakenSeconds,
-      // SECURITY TODO: toAnsweredJson() currently sends the answer key
-      // back to the server (backend trusts it - see the detailed note on
-      // that method). Needs a backend-side fix (server-stored answer key
-      // looked up by generation id) before this can be locked down.
+      // Each question carries its own signature (an HMAC the backend
+      // computed over its real answer key at /generate time) alongside
+      // correct_option/correct_options/correct_text. The backend
+      // re-verifies that signature on submit (verifyAnswerKey in
+      // quiz/service.go) - if a client edits the answer key before
+      // submitting, the signature no longer matches and the whole
+      // submission is rejected rather than graded, so echoing this data
+      // back is safe even though there's no server-stored quiz bank for
+      // freeform quizzes to look it up from instead.
       'questions': questions.map((q) => q.toAnsweredJson()).toList(),
     });
     return QuizAttemptResult.fromJson(response['data'] as Map<String, dynamic>);
