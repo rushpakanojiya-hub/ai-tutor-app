@@ -52,7 +52,10 @@ class _CreateEditCourseScreenState extends State<CreateEditCourseScreen> {
   Future<void> _loadCategories() async {
     try {
       _categories = await _service.listCategories();
-      _selectedCategoryId ??= _categories.isNotEmpty ? _categories.first.id : null;
+      final savedCategoryExists = _categories.any((c) => c.id == _selectedCategoryId);
+      if (!savedCategoryExists) {
+        _selectedCategoryId = _categories.isNotEmpty ? _categories.first.id : null;
+      }
     } catch (_) {
       // best-effort
     }

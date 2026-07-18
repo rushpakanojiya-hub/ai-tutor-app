@@ -101,6 +101,29 @@ class QuizAttemptQuestion {
     );
   }
 
+  // TODO(SECURITY - do not remove without a backend fix first):
+  // This sends the question's own answer key (correct_option/
+  // correct_options/correct_text) back to the server as part of the
+  // submission payload. Confirmed against backend/internal/quiz/service.go
+  // (~line 139): the scoring logic there does
+  //   answer.IsCorrect = *q.SelectedOption == *q.CorrectOption
+  // i.e. it trusts whatever "correct answer" the CLIENT reports, rather
+  // than checking against a value the server itself stored. A modified
+  // client (or a tampered request) can set correct_option = selected_option
+  // for every question and be guaranteed a 100% score.
+  //
+  // This can't be fixed by simply deleting these fields from the request:
+  // GenerateQuiz() (backend/internal/quiz/service.go) never persists the
+  // AI-generated question set server-side, so right now the client is the
+  // ONLY place the correct answers exist after generation - removing them
+  // here would make every freeform-quiz submission score 0%.
+  //
+  // Proper fix (backend change required, out of scope for this frontend
+  // pass): have GenerateQuiz() store the generated questions + answer key
+  // server-side keyed by a generation/session id, return only that id (and
+  // the question text/options, never the answer key) to the client, and
+  // have the submit endpoint look up the correct answers by that id
+  // instead of accepting them from the request body.
   Map<String, dynamic> toAnsweredJson() => {
         'question_type': questionType,
         'question': question,

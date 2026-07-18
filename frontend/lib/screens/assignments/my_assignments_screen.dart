@@ -45,6 +45,7 @@ class _MyAssignmentsScreenState extends State<MyAssignmentsScreen> {
   Future<void> _setStatus(AssignmentModel a, Future<void> Function(int) action) async {
     try {
       await action(a.id);
+      if (!mounted) return;
       _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -92,6 +93,7 @@ class _MyAssignmentsScreenState extends State<MyAssignmentsScreen> {
         backgroundColor: AppColors.purple,
         onPressed: () async {
           await context.push('/create-assignment');
+          if (!mounted) return;
           _load();
         },
         child: const Icon(Icons.add_rounded, color: Colors.white),

@@ -49,6 +49,7 @@ func main() {
 
 	router := gin.Default()
 	router.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
+        router.Use(middleware.ContentTypeFix())
 
 	// Serves lesson PDF notes from backend/static/notes/*.pdf as
 	// http://<host>:<port>/static/notes/<file>.pdf ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â real, self-hosted
@@ -80,11 +81,15 @@ func main() {
 	cloudinaryClient := cloudinary.NewClient(cfg.CloudinaryCloudName, cfg.CloudinaryAPIKey, cfg.CloudinaryAPISecret)
 	lessonsRepo := lessons.NewRepository(db)
 	lessonsService := lessons.NewService(lessonsRepo, cloudinaryClient)
-	lessonsHandler := lessons.NewHandler(lessonsService)
 
 	notesRepo := notes.NewRepository(db)
 	notesService := notes.NewService(notesRepo)
 	notesHandler := notes.NewHandler(notesService)
+
+	// Lesson Resource Management (additive): lessonsHandler is wired up
+	// after notesService exists so it can mirror a lesson's pdf_url into
+	// the notes table students already see (see lessons.Handler.syncNoteForLesson).
+	lessonsHandler := lessons.NewHandler(lessonsService, notesService)
 
 	// --- Learning Streak: real activity-based streak, fed by progress/quiz/ai below ---
 	streakRepo := streak.NewRepository(db)
@@ -113,7 +118,7 @@ func main() {
 	enrollmentService := enrollment.NewService(enrollmentRepo)
 
 	// --- Admin dashboard: real platform-wide counts ---
-	adminRepo := admin.NewRepository(db)
+	adminRepo := admin.NewRepository(db, streakRepo)
 	adminService := admin.NewService(adminRepo)
 	adminHandler := admin.NewHandler(adminService)
 

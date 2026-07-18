@@ -6,7 +6,13 @@ class Validators {
     if (value == null || value.trim().isEmpty) {
       return 'Email is required';
     }
-    final emailRegex = RegExp(r'^[\w.\-]+@([\w\-]+\.)+[\w\-]{2,4}$');
+    // Practical, production-grade email pattern (WHATWG/HTML5 style):
+    // allows +aliases in the local part and TLDs of any length (.technology,
+    // .engineering, etc.) - the previous regex capped TLDs at 4 chars and
+    // didn't allow '+', silently rejecting valid addresses.
+    final emailRegex = RegExp(
+      r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$",
+    );
     if (!emailRegex.hasMatch(value.trim())) {
       return 'Enter a valid email address';
     }

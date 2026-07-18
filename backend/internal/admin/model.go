@@ -17,3 +17,24 @@ type DashboardStats struct {
 	TotalAiChatSessions int `json:"total_ai_chat_sessions"`
 	NewRegistrationsThisWeek int `json:"new_registrations_this_week"`
 }
+
+// --- Student Progress Overview (additive) ---
+//
+// One row per student for the admin-only "Student Progress" screen -
+// lessons completed (count + percentage of everything on the
+// platform), average quiz score, and current learning streak. All
+// computed directly from existing tables (lesson_progress,
+// quiz_attempts, user_activity_days), same "no fabricated numbers"
+// approach as DashboardStats above.
+type StudentProgress struct {
+	UserID            int      `json:"user_id"`
+	Name              string   `json:"name"`
+	Email             string   `json:"email"`
+	Class             string   `json:"class"`
+	Section           string   `json:"section"`
+	LessonsCompleted  int      `json:"lessons_completed"`
+	TotalLessons      int      `json:"total_lessons"`
+	CompletionPercent float64  `json:"completion_percent"` // 0.0 - 1.0
+	AverageQuizScore  *float64 `json:"average_quiz_score"` // null if the student has no quiz attempts yet
+	CurrentStreak     int      `json:"current_streak"`
+}

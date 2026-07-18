@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/course_model.dart';
+import '../../services/api_service.dart';
 import '../../services/course_service.dart';
 import 'create_edit_course_screen.dart';
 import 'course_categories_screen.dart';
@@ -85,7 +86,8 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
 
     try {
       await _service.deleteCourse(course.id);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Course deleted.')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Course deleted.')));
       _load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete course.')));
@@ -99,12 +101,16 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
       } else {
         await _service.publishCourse(course.id);
       }
+      if (!mounted) return;
       _load();
+    } on ApiException catch (e) {
+      // Show the backend's actual validation message instead of a
+      // hardcoded guess - "at least one lesson" was previously shown for
+      // every publish failure, even unrelated ones.
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (mounted) {
-        final message = course.status == 'published'
-            ? 'Failed to unpublish course.'
-            : 'At least one lesson is required before publishing.';
+        final message = course.status == 'published' ? 'Failed to unpublish course.' : 'Failed to publish course.';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     }
@@ -121,6 +127,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
             tooltip: 'Manage Categories',
             onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => const CourseCategoriesScreen()));
+              if (!mounted) return;
               _loadCategories();
             },
           ),
@@ -132,6 +139,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
             context,
             MaterialPageRoute(builder: (_) => const CreateEditCourseScreen()),
           );
+          if (!mounted) return;
           if (created == true) _load();
         },
         backgroundColor: AppColors.purple,
@@ -287,6 +295,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
                       context,
                       MaterialPageRoute(builder: (_) => CreateEditCourseScreen(course: course)),
                     );
+                    if (!mounted) return;
                     if (updated == true) _load();
                   } else if (value == 'lessons') {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => LessonManagementScreen(courseId: course.id, courseName: course.name)));

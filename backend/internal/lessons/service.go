@@ -61,6 +61,29 @@ func (s *Service) Reorder(items []ReorderItem) error {
 	return s.repo.Reorder(items)
 }
 
+// --- Lesson Resource Management (additive) ---
+
+// ErrNoResourcesYet - a lesson can only be published once it has at
+// least one video or PDF attached (draft is allowed without any).
+var ErrNoResourcesYet = errors.New("at least one video or PDF is required before publishing")
+
+// Publish enforces "at least one video or PDF required before publishing" -
+// same shape as subjects.Service.Publish's lesson-count check.
+func (s *Service) Publish(id int) error {
+	lesson, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+	if lesson.VideoURL == "" && lesson.PDFURL == "" {
+		return ErrNoResourcesYet
+	}
+	return s.repo.SetStatus(id, StatusPublished)
+}
+
+func (s *Service) Unpublish(id int) error {
+	return s.repo.SetStatus(id, StatusDraft)
+}
+
 // UploadVideo, UploadPDF, UploadAssignment - same Cloudinary pattern
 // already used for live-class resource uploads (internal/resource).
 func (s *Service) UploadVideo(lessonID int, fileBytes []byte, filename string) (string, error) {

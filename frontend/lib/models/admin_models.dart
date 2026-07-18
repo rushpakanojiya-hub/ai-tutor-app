@@ -35,6 +35,51 @@ class AdminDashboardStats {
   }
 }
 
+// --- Student Progress Overview (additive) ---
+//
+// One row per student for the admin-only "Student Progress" screen -
+// lessons completed, average quiz score, and current streak.
+class StudentProgressModel {
+  final int userId;
+  final String name;
+  final String email;
+  final String classValue;
+  final String section;
+  final int lessonsCompleted;
+  final int totalLessons;
+  final double completionPercent; // 0.0 - 1.0
+  final double? averageQuizScore; // null if no quiz attempts yet
+  final int currentStreak;
+
+  StudentProgressModel({
+    required this.userId,
+    required this.name,
+    required this.email,
+    required this.classValue,
+    required this.section,
+    required this.lessonsCompleted,
+    required this.totalLessons,
+    required this.completionPercent,
+    required this.averageQuizScore,
+    required this.currentStreak,
+  });
+
+  factory StudentProgressModel.fromJson(Map<String, dynamic> json) {
+    return StudentProgressModel(
+      userId: json['user_id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      classValue: json['class'] as String? ?? '',
+      section: json['section'] as String? ?? '',
+      lessonsCompleted: json['lessons_completed'] as int? ?? 0,
+      totalLessons: json['total_lessons'] as int? ?? 0,
+      completionPercent: (json['completion_percent'] as num?)?.toDouble() ?? 0.0,
+      averageQuizScore: (json['average_quiz_score'] as num?)?.toDouble(),
+      currentStreak: json['current_streak'] as int? ?? 0,
+    );
+  }
+}
+
 /// One teacher application in the admin review queue.
 class TeacherApplicationModel {
   final int id;

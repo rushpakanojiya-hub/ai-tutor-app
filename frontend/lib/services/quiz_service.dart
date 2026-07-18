@@ -34,6 +34,10 @@ class QuizService {
       if (subjectId != null) 'subject_id': subjectId,
       'topic': topic,
       'time_taken_seconds': timeTakenSeconds,
+      // SECURITY TODO: toAnsweredJson() currently sends the answer key
+      // back to the server (backend trusts it - see the detailed note on
+      // that method). Needs a backend-side fix (server-stored answer key
+      // looked up by generation id) before this can be locked down.
       'questions': questions.map((q) => q.toAnsweredJson()).toList(),
     });
     return QuizAttemptResult.fromJson(response['data'] as Map<String, dynamic>);

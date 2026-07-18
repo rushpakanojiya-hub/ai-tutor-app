@@ -27,4 +27,12 @@ class AdminService {
   Future<void> rejectTeacher(int id) async {
     await _api.post(ApiConstants.adminRejectTeacher(id), {});
   }
+
+  // --- Student Progress Overview (additive) ---
+
+  Future<List<StudentProgressModel>> fetchStudentProgress() async {
+    final response = await _api.get(ApiConstants.adminStudentProgress);
+    final data = response['data'] as List<dynamic>? ?? [];
+    return data.map((json) => StudentProgressModel.fromJson(json as Map<String, dynamic>)).toList();
+  }
 }

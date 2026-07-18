@@ -60,3 +60,20 @@ func (s *Service) GetSummary(userID int) (*Summary, error) {
 		Heatmap:            heatmap,
 	}, nil
 }
+
+// --- Learning Calendar month view (additive) ---
+
+// MonthCalendar is the response for GET /api/streak/calendar.
+type MonthCalendar struct {
+	Year        int      `json:"year"`
+	Month       int      `json:"month"`
+	ActiveDates []string `json:"active_dates"`
+}
+
+func (s *Service) GetMonthCalendar(userID, year, month int) (*MonthCalendar, error) {
+	dates, err := s.repo.GetActiveDatesForMonth(userID, year, month)
+	if err != nil {
+		return nil, err
+	}
+	return &MonthCalendar{Year: year, Month: month, ActiveDates: dates}, nil
+}

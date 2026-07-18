@@ -18,15 +18,18 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-const selectColumns = `id, subject_id, title, description, video_url, pdf_url, assignment_url, thumbnail_url, duration, order_number, created_at`
+const selectColumns = `id, subject_id, title, description, video_url, video_source, pdf_url, pdf_title, pdf_description, assignment_url, thumbnail_url, duration, order_number, status, created_at`
 
 func scanLesson(row interface{ Scan(...any) error }) (Lesson, error) {
 	var l Lesson
-	var description, videoURL, pdfURL, assignmentURL, thumbnailURL sql.NullString
-	err := row.Scan(&l.ID, &l.SubjectID, &l.Title, &description, &videoURL, &pdfURL, &assignmentURL, &thumbnailURL, &l.Duration, &l.OrderNumber, &l.CreatedAt)
+	var description, videoURL, videoSource, pdfURL, pdfTitle, pdfDescription, assignmentURL, thumbnailURL sql.NullString
+	err := row.Scan(&l.ID, &l.SubjectID, &l.Title, &description, &videoURL, &videoSource, &pdfURL, &pdfTitle, &pdfDescription, &assignmentURL, &thumbnailURL, &l.Duration, &l.OrderNumber, &l.Status, &l.CreatedAt)
 	l.Description = description.String
 	l.VideoURL = videoURL.String
+	l.VideoSource = videoSource.String
 	l.PDFURL = pdfURL.String
+	l.PDFTitle = pdfTitle.String
+	l.PDFDescription = pdfDescription.String
 	l.AssignmentURL = assignmentURL.String
 	l.ThumbnailURL = thumbnailURL.String
 	return l, err
@@ -111,11 +114,14 @@ func (r *Repository) Update(id int, req UpdateLessonRequest) error {
 			title = COALESCE($1, title),
 			description = COALESCE($2, description),
 			video_url = COALESCE($3, video_url),
-			pdf_url = COALESCE($4, pdf_url),
-			thumbnail_url = COALESCE($5, thumbnail_url),
-			duration = COALESCE($6, duration)
-		WHERE id = $7`,
-		req.Title, req.Description, req.VideoURL, req.PDFURL, req.ThumbnailURL, req.Duration, id,
+			video_source = COALESCE($4, video_source),
+			pdf_url = COALESCE($5, pdf_url),
+			pdf_title = COALESCE($6, pdf_title),
+			pdf_description = COALESCE($7, pdf_description),
+			thumbnail_url = COALESCE($8, thumbnail_url),
+			duration = COALESCE($9, duration)
+		WHERE id = $10`,
+		req.Title, req.Description, req.VideoURL, req.VideoSource, req.PDFURL, req.PDFTitle, req.PDFDescription, req.ThumbnailURL, req.Duration, id,
 	)
 	if err != nil {
 		return err
@@ -159,7 +165,11 @@ func (r *Repository) Reorder(items []ReorderItem) error {
 }
 
 func (r *Repository) SetVideoURL(id int, url string) error {
-	_, err := r.db.Exec(`UPDATE lessons SET video_url = $1 WHERE id = $2`, url, id)
+	// Direct file uploads always set video_source back to "upload" -
+	// this is what distinguishes an uploaded file from a pasted
+	// YouTube URL (set via Update) when the player decides how to
+	// render the lesson's video.
+	_, err := r.db.Exec(`UPDATE lessons SET video_url = $1, video_source = 'upload' WHERE id = $2`, url, id)
 	return err
 }
 
@@ -171,4 +181,19 @@ func (r *Repository) SetPDFURL(id int, url string) error {
 func (r *Repository) SetAssignmentURL(id int, url string) error {
 	_, err := r.db.Exec(`UPDATE lessons SET assignment_url = $1 WHERE id = $2`, url, id)
 	return err
+}
+
+// --- Lesson Resource Management (additive) ---
+
+// SetStatus - used by Publish/Unpublish, same pattern as subjects.SetStatus.
+func (r *Repository) SetStatus(id int, status string) error {
+	res, err := r.db.Exec(`UPDATE lessons SET status = $1 WHERE id = $2`, status, id)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrLessonNotFound
+	}
+	return nil
 }

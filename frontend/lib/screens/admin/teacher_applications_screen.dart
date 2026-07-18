@@ -47,10 +47,9 @@ class _TeacherApplicationsScreenState extends State<TeacherApplicationsScreen> {
     setState(() => _processingIds.add(app.id));
     try {
       await _adminService.approveTeacher(app.id);
+      if (!mounted) return;
       setState(() => _applications.removeWhere((a) => a.id == app.id));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} approved - they can now log in.')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} approved - they can now log in.')));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to approve. Please try again.')));
@@ -72,15 +71,14 @@ class _TeacherApplicationsScreenState extends State<TeacherApplicationsScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (!mounted || confirmed != true) return;
 
     setState(() => _processingIds.add(app.id));
     try {
       await _adminService.rejectTeacher(app.id);
+      if (!mounted) return;
       setState(() => _applications.removeWhere((a) => a.id == app.id));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} rejected.')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} rejected.')));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to reject. Please try again.')));

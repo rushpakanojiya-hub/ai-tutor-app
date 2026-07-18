@@ -46,10 +46,11 @@ class _VoiceInputButtonState extends State<VoiceInputButton> {
 
   Future<void> _toggleListening() async {
     await _ensureInitialized();
-    if (!_isAvailable) return;
+    if (!mounted || !_isAvailable) return;
 
     if (_isListening) {
       await _speech.stop();
+      if (!mounted) return;
       setState(() => _isListening = false);
       return;
     }

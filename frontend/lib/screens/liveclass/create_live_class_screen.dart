@@ -60,6 +60,13 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
       return;
     }
 
+    final startMinutes = _startTime.hour * 60 + _startTime.minute;
+    final endMinutes = _endTime.hour * 60 + _endTime.minute;
+    if (endMinutes <= startMinutes) {
+      setState(() => _error = 'End time must be after start time.');
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;

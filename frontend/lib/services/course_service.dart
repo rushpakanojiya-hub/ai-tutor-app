@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/category_model.dart';
@@ -95,12 +95,55 @@ class CourseService {
     return data['id'] as int? ?? 0;
   }
 
-  Future<void> updateLesson(int id, {String? title, String? description, int? duration}) async {
+  Future<void> updateLesson(
+    int id, {
+    String? title,
+    String? description,
+    int? duration,
+    String? videoUrl,
+    String? videoSource,
+    String? pdfUrl,
+    String? pdfTitle,
+    String? pdfDescription,
+  }) async {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
     if (description != null) body['description'] = description;
     if (duration != null) body['duration'] = duration;
+    if (videoUrl != null) body['video_url'] = videoUrl;
+    if (videoSource != null) body['video_source'] = videoSource;
+    if (pdfUrl != null) body['pdf_url'] = pdfUrl;
+    if (pdfTitle != null) body['pdf_title'] = pdfTitle;
+    if (pdfDescription != null) body['pdf_description'] = pdfDescription;
     await _api.put(ApiConstants.lessonById(id), body);
+  }
+
+  Future<AdminLessonModel> getLesson(int id) async {
+    final response = await _api.get(ApiConstants.lessonById(id));
+    final data = response['data'] as Map<String, dynamic>? ?? {};
+    return AdminLessonModel.fromJson(data);
+  }
+
+  Future<void> setLessonYoutubeVideo(int lessonId, String url) async {
+    await updateLesson(lessonId, videoUrl: url, videoSource: 'youtube');
+  }
+
+  Future<void> removeLessonVideo(int lessonId) async {
+    await updateLesson(lessonId, videoUrl: '', videoSource: '');
+  }
+
+  Future<void> removeLessonPdf(int lessonId) async {
+    await updateLesson(lessonId, pdfUrl: '', pdfTitle: '', pdfDescription: '');
+  }
+
+  // --- Lesson Resource Management (additive) ---
+
+  Future<void> publishLesson(int id) async {
+    await _api.post(ApiConstants.lessonPublish(id), {});
+  }
+
+  Future<void> unpublishLesson(int id) async {
+    await _api.post(ApiConstants.lessonUnpublish(id), {});
   }
 
   Future<void> deleteLesson(int id) async {

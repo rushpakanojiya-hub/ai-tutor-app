@@ -110,7 +110,7 @@ func LoadConfig() *Config {
 		CloudinaryAPIKey:    getEnv("CLOUDINARY_API_KEY", ""),
 		CloudinaryAPISecret: getEnv("CLOUDINARY_API_SECRET", ""),
 
-		AllowedOrigins: parseCommaList(getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080")),
+		AllowedOrigins: parseCommaList(getEnv("CORS_ORIGINS", "https://d32oc473al3i86.cloudfront.net,http://localhost:3000,http://localhost:8080")),
 	}
 
 	// Security fix (QA: "Hardcoded JWT secret") - the old code always fell

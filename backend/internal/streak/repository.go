@@ -176,6 +176,35 @@ func (r *Repository) GetActivityHeatmap(userID, days int) ([]HeatmapDay, error) 
 	return result, nil
 }
 
+// --- Learning Calendar month view (additive) ---
+//
+// Unlike GetActivityHeatmap (a rolling "last N days" window that always
+// ends today), this returns every active date within one specific
+// calendar month - regardless of month/year - so the Learning Calendar
+// screen can page back through past months' full history.
+func (r *Repository) GetActiveDatesForMonth(userID, year, month int) ([]string, error) {
+	rows, err := r.db.Query(`
+		SELECT activity_date FROM user_activity_days
+		WHERE user_id = $1
+			AND activity_date >= make_date($2, $3, 1)
+			AND activity_date < (make_date($2, $3, 1) + INTERVAL '1 month')`,
+		userID, year, month)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var dates []string
+	for rows.Next() {
+		var d time.Time
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		dates = append(dates, d.Format("2006-01-02"))
+	}
+	return dates, rows.Err()
+}
+
 func truncateToDate(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }

@@ -58,6 +58,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           TextButton(
             onPressed: () async {
               await _service.markAllRead();
+              if (!mounted) return;
               _load();
             },
             child: const Text('Mark all read'),
@@ -89,6 +90,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               onTap: () async {
                                 if (!n.isRead) {
                                   await _service.markRead(n.id);
+                                  if (!mounted) return;
                                   _load();
                                 }
                               },

@@ -32,24 +32,34 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
   }
 
   Future<void> _load() async {
+    final isRefresh = _certificates.isNotEmpty;
     setState(() {
-      _loading = true;
+      if (!isRefresh) _loading = true;
       _error = null;
     });
     try {
+      List<CertificateModel> fetched;
       switch (widget.mode) {
         case CertificateListMode.mine:
-          _certificates = await _service.fetchMine();
+          fetched = await _service.fetchMine();
           break;
         case CertificateListMode.teacher:
-          _certificates = await _service.fetchForTeacher();
+          fetched = await _service.fetchForTeacher();
           break;
         case CertificateListMode.admin:
-          _certificates = await _service.fetchAllForAdmin();
+          fetched = await _service.fetchAllForAdmin();
           break;
       }
+      if (mounted) setState(() => _certificates = fetched);
     } catch (e) {
-      _error = 'Could not load certificates.';
+      if (!mounted) return;
+      if (isRefresh) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh certificates. Showing your last loaded certificates.')),
+        );
+      } else {
+        setState(() => _error = 'Could not load certificates.');
+      }
     }
     if (mounted) setState(() => _loading = false);
   }

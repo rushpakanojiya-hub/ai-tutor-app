@@ -70,7 +70,8 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
 
       try {
         await _service.assignClassSection(student.id, classValue: classController.text.trim(), section: sectionController.text.trim());
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated.')));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated.')));
         _load();
       } catch (e) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update.')));

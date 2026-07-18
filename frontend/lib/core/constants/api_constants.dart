@@ -7,8 +7,9 @@ class ApiConstants {
   /// - Physical device / real backend: replace with your machine's LAN IP
   ///   or your deployed Render URL, e.g. https://your-app.onrender.com
   /// - iOS simulator: use http://localhost:8080
-  static const String baseUrl = 'http://192.168.1.13:8080/api';
+  //static const String baseUrl = 'http://ai-tutor-backend-env.eba-kiewvhnv.ap-south-1.elasticbeanstalk.com/api';
 
+  static const String baseUrl = 'https://jr4gemf0zk.execute-api.ap-south-1.amazonaws.com/api';
   // --- Day 1: Auth ---
   static const String register = '/auth/register';
   static const String badgesMine = '/badges/mine';
@@ -27,12 +28,12 @@ class ApiConstants {
   static const String certificatesAll = '/certificates/all';
   static String certificate(int id) => '/certificates/$id';
   static String adminCourses({String? search, int? categoryId, String? status}) {
-    var path = '/admin/courses?';
+    const path = '/admin/courses';
     final params = <String>[];
     if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeQueryComponent(search)}');
     if (categoryId != null) params.add('category_id=$categoryId');
     if (status != null && status.isNotEmpty) params.add('status=$status');
-    return path + params.join('&');
+    return params.isEmpty ? path : '$path?${params.join('&')}';
   }
   static String course(int id) => '/subjects/$id';
   static String coursePublish(int id) => '/subjects/$id/publish';
@@ -43,6 +44,9 @@ class ApiConstants {
   static String lessonUploadVideo(int id) => '/lessons/$id/upload-video';
   static String lessonUploadPdf(int id) => '/lessons/$id/upload-pdf';
   static String lessonUploadAssignment(int id) => '/lessons/$id/upload-assignment';
+  // Lesson Resource Management (additive)
+  static String lessonPublish(int id) => '/lessons/$id/publish';
+  static String lessonUnpublish(int id) => '/lessons/$id/unpublish';
   static const String teacherApply = '/auth/teacher/apply';
   static const String login = '/auth/login';
   static const String profile = '/auth/profile';
@@ -85,11 +89,15 @@ class ApiConstants {
 
   // --- Learning Streak ---
   static const String streak = '/streak';
+  // Learning Calendar month view (additive)
+  static String streakCalendar(int year, int month) => '/streak/calendar?year=$year&month=$month';
 
   // --- Admin Panel ---
   static const String adminDashboard = '/admin/dashboard';
   static const String adminPendingTeachers = '/auth/admin/teachers/pending';
   static String adminApproveTeacher(int id) => '/auth/admin/teachers/$id/approve';
+  // Student Progress Overview (additive)
+  static const String adminStudentProgress = '/admin/students/progress';
   static String adminRejectTeacher(int id) => '/auth/admin/teachers/$id/reject';
 
   // --- Assignments ---
@@ -155,7 +163,13 @@ class ApiConstants {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;
     }
-    final origin = baseUrl.replaceAll('/api', '');
+    // Strip only a trailing "/api" path segment - a blanket replaceAll
+    // would also mangle any earlier "/api" occurrence, e.g. turning
+    // "https://api.school.com/api" into "https://.school.com".
+    var origin = baseUrl;
+    if (origin.endsWith('/api')) {
+      origin = origin.substring(0, origin.length - '/api'.length);
+    }
     return '$origin$path';
   }
 }

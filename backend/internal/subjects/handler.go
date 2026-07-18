@@ -104,9 +104,24 @@ func requireAdmin(c *gin.Context) bool {
 	return true
 }
 
+// --- Lesson Resource Management (additive) ---
+//
+// Teachers need to browse the course list read-only so they can drill
+// into a course's lessons and manage video/PDF resources there (lessons
+// handler already accepts admin or teacher). Course/category CRUD stays
+// admin-only, unchanged - only this listing endpoint is opened up.
+func requireAdminOrTeacherReadOnly(c *gin.Context) bool {
+	role := c.GetString("role")
+	if role != "admin" && role != "teacher" {
+		utils.RespondError(c, http.StatusForbidden, "Only admins or teachers can view course management")
+		return false
+	}
+	return true
+}
+
 // AdminList handles GET /api/admin/courses?search=&category_id=&status=.
 func (h *Handler) AdminList(c *gin.Context) {
-	if !requireAdmin(c) {
+	if !requireAdminOrTeacherReadOnly(c) {
 		return
 	}
 	search := c.Query("search")

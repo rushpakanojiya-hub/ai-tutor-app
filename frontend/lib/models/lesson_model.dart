@@ -5,12 +5,13 @@ class LessonModel {
   final String title;
   final String description;
   final String videoUrl;
+  final String videoSource; // 'upload' | 'youtube' - decides how the player renders it
   final String pdfUrl;
   final String thumbnailUrl;
   final int duration; // minutes
   final int orderNumber;
 
-  /// Not part of the API response Ã¢â‚¬â€ set locally by the UI once a lesson
+  /// Not part of the API response - set locally by the UI once a lesson
   /// has been marked complete via the backend, so LessonsScreen can show a
   /// checkmark (see LessonProvider.loadLessons, which merges in real
   /// persisted completion from GET /api/progress/subjects/:id).
@@ -22,6 +23,7 @@ class LessonModel {
     required this.title,
     required this.description,
     required this.videoUrl,
+    required this.videoSource,
     required this.pdfUrl,
     required this.thumbnailUrl,
     required this.duration,
@@ -36,6 +38,7 @@ class LessonModel {
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',
       videoUrl: json['video_url'] as String? ?? '',
+      videoSource: json['video_source'] as String? ?? 'upload',
       pdfUrl: json['pdf_url'] as String? ?? '',
       thumbnailUrl: json['thumbnail_url'] as String? ?? '',
       duration: json['duration'] as int? ?? 0,

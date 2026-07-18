@@ -73,7 +73,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 32),
                 CustomTextField(
                   label: 'Full name',
-                  hint: 'Priyanshi Kanojiya',
+                  hint: 'Your full name',
                   controller: _nameController,
                   prefixIcon: Icons.person_outline,
                   validator: Validators.validateName,

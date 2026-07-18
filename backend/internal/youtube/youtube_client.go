@@ -57,6 +57,14 @@ func NewClient(apiKeys []string, maxResults int) *Client {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
+	// YouTube's Search API caps maxResults at 50 per request, and we
+	// over-fetch at 2x this value (see the search call below) before
+	// filtering/ranking - so this must never exceed 25, or the doubled
+	// value sent to the API would exceed YouTube's hard limit and the
+	// request would fail with a 400 error.
+	if maxResults > 25 {
+		maxResults = 25
+	}
 	clean := make([]string, 0, len(apiKeys))
 	for _, k := range apiKeys {
 		k = strings.TrimSpace(k)
@@ -129,7 +137,11 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 		params.Set("videoDuration", "medium") // excludes most Shorts
 		params.Set("safeSearch", "strict")
 		params.Set("relevanceLanguage", "en")
-		params.Set("maxResults", fmt.Sprintf("%d", c.maxResults*2)) // over-fetch, then filter/rank
+		// Clamp to YouTube's hard API limit of 50 - if maxResults is
+		// configured high enough that maxResults*2 would exceed it, the
+		// API rejects the request with a 400 error instead of just
+		// capping it for us.
+		params.Set("maxResults", fmt.Sprintf("%d", min(c.maxResults*2, 50))) // over-fetch, then filter/rank
 		params.Set("key", key)
 
 		err := c.getWithRetry(ctx, youtubeSearchEndpoint+"?"+params.Encode(), &sr)

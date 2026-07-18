@@ -59,6 +59,7 @@ class _CourseCategoriesScreenState extends State<CourseCategoriesScreen> {
         } else {
           await _service.updateCategory(existing.id, name: result);
         }
+        if (!mounted) return;
         _load();
       } catch (e) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save category.')));

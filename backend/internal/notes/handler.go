@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -19,6 +20,18 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// requireTeacherOrAdmin mirrors lessons.requireTeacherOrAdmin - PDF
+// notes are managed from inside the Lesson page by the same roles that
+// manage the lesson itself.
+func requireTeacherOrAdmin(c *gin.Context) bool {
+	role := c.GetString("role")
+	if role != "admin" && role != "teacher" {
+		utils.RespondError(c, http.StatusForbidden, "Only teachers and admins can manage notes")
+		return false
+	}
+	return true
+}
+
 // ListByLesson handles GET /api/lessons/:id/notes.
 func (h *Handler) ListByLesson(c *gin.Context) {
 	lessonID, err := strconv.Atoi(c.Param("id"))
@@ -34,13 +47,12 @@ func (h *Handler) ListByLesson(c *gin.Context) {
 	utils.RespondSuccess(c, http.StatusOK, "Notes fetched", list)
 }
 
-// Create handles POST /api/notes (admin-only).
+// Create handles POST /api/notes (teacher or admin).
 //
 // QA fix: previously had no role check - any authenticated user could
 // create a note.
 func (h *Handler) Create(c *gin.Context) {
-	if c.GetString("role") != "admin" {
-		utils.RespondError(c, http.StatusForbidden, "Only admins can create notes")
+	if !requireTeacherOrAdmin(c) {
 		return
 	}
 	var req CreateNoteRequest
@@ -54,4 +66,54 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	utils.RespondSuccess(c, http.StatusCreated, "Note created", gin.H{"id": id})
+}
+
+// --- Lesson Resource Management (additive) ---
+
+// Update handles PUT /api/notes/:id (teacher or admin) - "Replace PDF"
+// and editing PDF title/description.
+func (h *Handler) Update(c *gin.Context) {
+	if !requireTeacherOrAdmin(c) {
+		return
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid note id")
+		return
+	}
+	var req UpdateNoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if err := h.service.Update(id, req); err != nil {
+		if errors.Is(err, ErrNoteNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "Note not found")
+			return
+		}
+		utils.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Note updated", nil)
+}
+
+// Delete handles DELETE /api/notes/:id (teacher or admin) - "Remove PDF".
+func (h *Handler) Delete(c *gin.Context) {
+	if !requireTeacherOrAdmin(c) {
+		return
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid note id")
+		return
+	}
+	if err := h.service.Delete(id); err != nil {
+		if errors.Is(err, ErrNoteNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "Note not found")
+			return
+		}
+		utils.RespondError(c, http.StatusInternalServerError, "Failed to delete note")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Note deleted", nil)
 }

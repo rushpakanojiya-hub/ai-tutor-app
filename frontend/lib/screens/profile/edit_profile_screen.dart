@@ -5,10 +5,10 @@ import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 
-/// Edit Profile - kept intentionally simple to match what the backend
-/// actually stores today (name, email, password). Name is read-only per
-/// the current registration flow; email can be updated; password change
-/// is a separate action with its own current/new/confirm fields.
+/// Edit Profile - name, email, and password can all be updated; the
+/// backend's /api/users/profile endpoint already supports name+email
+/// together (see UserService.updateProfile), name just wasn't wired up
+/// to an editable field here before.
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
 
@@ -19,16 +19,20 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final UserService _userService = UserService();
   final AuthService _authService = AuthService();
+  final _nameFormKey = GlobalKey<FormState>();
   final _emailFormKey = GlobalKey<FormState>();
   final _passwordFormKey = GlobalKey<FormState>();
 
+  late TextEditingController _nameController;
   late TextEditingController _emailController;
   final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  String _originalName = '';
   String _originalEmail = '';
   bool _loadingEmail = true;
+  bool _savingName = false;
   bool _savingEmail = false;
   bool _changingPassword = false;
   bool _obscureCurrent = true;
@@ -38,6 +42,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _originalName = context.read<AuthProvider>().currentUser?.name ?? '';
+    _nameController = TextEditingController(text: _originalName);
     _emailController = TextEditingController();
     _loadCurrentEmail();
   }
@@ -63,6 +69,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
@@ -71,6 +78,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   bool get _hasUnsavedChanges =>
+      _nameController.text.trim() != _originalName ||
       _emailController.text.trim() != _originalEmail ||
       _currentPasswordController.text.isNotEmpty ||
       _newPasswordController.text.isNotEmpty ||
@@ -90,6 +98,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
     );
     return result ?? false;
+  }
+
+  Future<void> _saveName() async {
+    if (!_nameFormKey.currentState!.validate()) return;
+    if (_nameController.text.trim() == _originalName) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Update name?'),
+        content: Text('Change your name to ${_nameController.text.trim()}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _savingName = true);
+    try {
+      final newName = _nameController.text.trim();
+      await _userService.updateProfile(name: newName, email: _originalEmail);
+      if (!mounted) return;
+      await context.read<AuthProvider>().updateLocalName(newName);
+      if (mounted) setState(() => _originalName = newName);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name updated successfully')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+      }
+    } finally {
+      if (mounted) setState(() => _savingName = false);
+    }
   }
 
   Future<void> _saveEmail() async {
@@ -115,8 +160,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _savingEmail = true);
     try {
-      final user = context.read<AuthProvider>().currentUser;
-      await _userService.updateProfile(name: user?.name ?? '', email: _emailController.text.trim());
+      await _userService.updateProfile(name: _originalName, email: _emailController.text.trim());
       if (mounted) setState(() => _originalEmail = _emailController.text.trim());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email updated successfully')));
@@ -170,8 +214,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().currentUser;
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -196,10 +238,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           children: [
             _sectionCard(
               title: 'Name',
-              child: TextFormField(
-                initialValue: user?.name ?? '',
-                enabled: false,
-                decoration: const InputDecoration(border: OutlineInputBorder(), helperText: 'Contact support to change your name'),
+              child: Form(
+                key: _nameFormKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Full name'),
+                      validator: (value) {
+                        final v = value?.trim() ?? '';
+                        if (v.isEmpty) return 'Name is required';
+                        if (v.length < 2) return 'Name is too short';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _savingName ? null : _saveName,
+                      child: _savingName
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Save Name'),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),

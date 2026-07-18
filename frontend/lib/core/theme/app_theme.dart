@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
@@ -37,6 +38,19 @@ class AppTheme {
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
+        ),
+        // Fix: without this, every AppBar computes its own status bar
+        // style automatically, which could silently disagree with the
+        // global style set at app startup and leave a solid black bar on
+        // some screens/devices. Setting it explicitly here makes every
+        // AppBar-based screen consistent.
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: Colors.white,
+          systemNavigationBarIconBrightness: Brightness.dark,
+          systemNavigationBarDividerColor: Colors.transparent,
         ),
       ),
       cardTheme: CardThemeData(

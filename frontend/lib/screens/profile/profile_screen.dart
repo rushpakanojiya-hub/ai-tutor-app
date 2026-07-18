@@ -11,6 +11,7 @@ import '../leaderboard/leaderboard_screen.dart';
 import '../leaderboard/manage_students_screen.dart';
 import '../certificates/my_certificates_screen.dart';
 import '../courses/admin_course_management_screen.dart';
+import '../courses/teacher_lessons_screen.dart';
 
 /// Profile tab: shows the logged-in user's info and a logout button.
 /// UI redesign only â€” AuthProvider.logout() and the navigation after it
@@ -128,6 +129,14 @@ class ProfileScreen extends StatelessWidget {
               label: 'My Live Classes',
               onTap: () => context.push('/my-live-classes'),
             ).animate().fadeIn(duration: 250.ms, delay: 149.ms),
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              icon: Icons.library_books_rounded,
+              label: 'Manage Lessons',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const TeacherLessonsScreen()));
+              },
+            ).animate().fadeIn(duration: 250.ms, delay: 150.ms),
           ],
           if (auth.currentUser?.role == 'admin') ...[
             const SizedBox(height: 12),
@@ -167,6 +176,24 @@ class ProfileScreen extends StatelessWidget {
             label: 'Logout',
             color: AppColors.error,
             onTap: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Are you sure?'),
+                  content: const Text('You will be logged out of your account.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('No'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Yes', style: TextStyle(color: AppColors.error)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed != true) return;
               await context.read<AuthProvider>().logout();
               if (context.mounted) context.go('/login');
             },

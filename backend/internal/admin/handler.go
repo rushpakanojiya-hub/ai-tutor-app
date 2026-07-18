@@ -25,3 +25,15 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Dashboard stats fetched", stats)
 }
+
+// --- Student Progress Overview (additive) ---
+
+// GetStudentProgress handles GET /api/admin/students/progress.
+func (h *Handler) GetStudentProgress(c *gin.Context) {
+	list, err := h.service.ListStudentProgress()
+	if err != nil {
+		utils.RespondError(c, http.StatusInternalServerError, "Failed to load student progress")
+		return
+	}
+	utils.RespondSuccess(c, http.StatusOK, "Student progress fetched", list)
+}

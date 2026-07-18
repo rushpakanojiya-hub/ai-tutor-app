@@ -1,0 +1,87 @@
+diff --git a/backend/internal/liveclass/service.go b/backend/internal/liveclass/service.go
+index 90ca6e4..548e164 100644
+--- a/backend/internal/liveclass/service.go
++++ b/backend/internal/liveclass/service.go
+@@ -73,8 +73,29 @@ func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
+ }
+ 
+ func (s *Service) Update(classID, teacherID int, req UpdateRequest) error {
+-	if req.StartTime != nil && req.EndTime != nil {
+-		if err := validateTimeRange(*req.StartTime, *req.EndTime); err != nil {
++	// QA fix ("Live Class Update - time-range validation on partial
++	// updates"): validation previously only ran when BOTH start_time and
++	// end_time were sent in the same request. A partial update sending
++	// only one of the two (e.g. moving start_time later than the
++	// existing end_time, or end_time earlier than the existing
++	// start_time) skipped validation entirely, letting an invalid range
++	// (end <= start) be persisted. Now we resolve the EFFECTIVE start/end
++	// - the new value if provided, otherwise the class's current value -
++	// and validate that pair whenever either field is part of the update.
++	if req.StartTime != nil || req.EndTime != nil {
++		existing, err := s.repo.GetByID(classID)
++		if err != nil {
++			return err
++		}
++		effectiveStart := existing.StartTime
++		if req.StartTime != nil {
++			effectiveStart = *req.StartTime
++		}
++		effectiveEnd := existing.EndTime
++		if req.EndTime != nil {
++			effectiveEnd = *req.EndTime
++		}
++		if err := validateTimeRange(effectiveStart, effectiveEnd); err != nil {
+ 			return err
+ 		}
+ 	}
+diff --git a/backend/internal/youtube/service.go b/backend/internal/youtube/service.go
+index b8ce75e..5259cfc 100644
+--- a/backend/internal/youtube/service.go
++++ b/backend/internal/youtube/service.go
+@@ -60,9 +60,11 @@ func (s *Service) GetVideosForLesson(ctx context.Context, lessonID int64) ([]You
+ 
+ 	if len(videos) == 0 {
+ 		videos = []YoutubeVideo{}
+-	}
+-
+-	if err := s.repo.SaveCache(ctx, lessonID, query, videos); err != nil {
++	} else if err := s.repo.SaveCache(ctx, lessonID, query, videos); err != nil {
++		// Only cache non-empty results for the full 24h TTL - caching an
++		// empty result would "lock in" a transient miss (a bad query, an
++		// API hiccup, temporary no matches) for a full day, hiding videos
++		// that would have been found on a retry a few minutes later.
+ 		log.Printf("youtube: failed to write cache for lesson %d: %v", lessonID, err)
+ 	}
+ 
+diff --git a/backend/internal/youtube/youtube_client.go b/backend/internal/youtube/youtube_client.go
+index eb8345e..322d390 100644
+--- a/backend/internal/youtube/youtube_client.go
++++ b/backend/internal/youtube/youtube_client.go
+@@ -57,6 +57,14 @@ func NewClient(apiKeys []string, maxResults int) *Client {
+ 	if maxResults <= 0 {
+ 		maxResults = 5
+ 	}
++	// YouTube's Search API caps maxResults at 50 per request, and we
++	// over-fetch at 2x this value (see the search call below) before
++	// filtering/ranking - so this must never exceed 25, or the doubled
++	// value sent to the API would exceed YouTube's hard limit and the
++	// request would fail with a 400 error.
++	if maxResults > 25 {
++		maxResults = 25
++	}
+ 	clean := make([]string, 0, len(apiKeys))
+ 	for _, k := range apiKeys {
+ 		k = strings.TrimSpace(k)
+@@ -129,7 +137,11 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
+ 		params.Set("videoDuration", "medium") // excludes most Shorts
+ 		params.Set("safeSearch", "strict")
+ 		params.Set("relevanceLanguage", "en")
+-		params.Set("maxResults", fmt.Sprintf("%d", c.maxResults*2)) // over-fetch, then filter/rank
++		// Clamp to YouTube's hard API limit of 50 - if maxResults is
++		// configured high enough that maxResults*2 would exceed it, the
++		// API rejects the request with a 400 error instead of just
++		// capping it for us.
++		params.Set("maxResults", fmt.Sprintf("%d", min(c.maxResults*2, 50))) // over-fetch, then filter/rank
+ 		params.Set("key", key)
+ 
+ 		err := c.getWithRetry(ctx, youtubeSearchEndpoint+"?"+params.Encode(), &sr)

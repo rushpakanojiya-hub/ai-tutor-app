@@ -33,10 +33,43 @@ class _ProgressDashboardScreenState extends State<ProgressDashboardScreen> {
   bool _isLoading = true;
   String? _error;
 
+  // --- Learning Calendar month view (additive) ---
+  DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  Set<String> _calendarActiveDates = {};
+  bool _loadingCalendar = false;
+
+  static const List<String> _monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadCalendarMonth(_calendarMonth);
+  }
+
+  Future<void> _loadCalendarMonth(DateTime month) async {
+    setState(() => _loadingCalendar = true);
+    try {
+      final dates = await _streakService.fetchMonthCalendar(month.year, month.month);
+      if (mounted) setState(() => _calendarActiveDates = dates);
+    } catch (e) {
+      // Keep whatever was showing before; the calendar card just won't
+      // update for this month if the request fails.
+    }
+    if (mounted) setState(() => _loadingCalendar = false);
+  }
+
+  void _goToMonth(int monthDelta) {
+    final next = DateTime(_calendarMonth.year, _calendarMonth.month + monthDelta);
+    final now = DateTime.now();
+    if (next.year > now.year || (next.year == now.year && next.month > now.month)) {
+      return; // no browsing into the future
+    }
+    setState(() => _calendarMonth = next);
+    _loadCalendarMonth(next);
   }
 
   Future<void> _load() async {
@@ -375,42 +408,55 @@ class _ProgressDashboardScreenState extends State<ProgressDashboardScreen> {
     );
   }
 
-  Widget _buildCourseCard(SubjectModel s) {
+ Widget _buildCourseCard(SubjectModel s) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: _whiteCard(
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(color: AppColors.purple.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
-              child: const Icon(Icons.menu_book_rounded, color: AppColors.purple),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text('${s.completedLessons}/${s.lessonCount} lessons', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: (s.progressPercentage / 100).clamp(0, 1),
-                      minHeight: 6,
-                      backgroundColor: AppColors.purple.withOpacity(0.12),
-                      valueColor: const AlwaysStoppedAnimation(AppColors.purple),
-                    ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: () => context.push('/lessons', extra: {
+            'subjectId': s.id,
+            'subjectName': s.name,
+          }),
+          child: _whiteCard(
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: AppColors.purple.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
+                  child: const Icon(Icons.menu_book_rounded, color: AppColors.purple),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text('${s.completedLessons}/${s.lessonCount} lessons', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          value: (s.progressPercentage / 100).clamp(0, 1),
+                          minHeight: 6,
+                          backgroundColor: AppColors.purple.withOpacity(0.12),
+                          valueColor: const AlwaysStoppedAnimation(AppColors.purple),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 10),
+                Text('${s.progressPercentage.toStringAsFixed(0)}%', style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.purple)),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 20),
+              ],
             ),
-            const SizedBox(width: 10),
-            Text('${s.progressPercentage.toStringAsFixed(0)}%', style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.purple)),
-          ],
+          ),
         ),
       ),
     );
@@ -503,28 +549,88 @@ class _ProgressDashboardScreenState extends State<ProgressDashboardScreen> {
   }
 
   Widget _buildHeatmapCard() {
-    final days = _streak?.heatmap ?? [];
-    if (days.isEmpty) return const SizedBox.shrink();
+    final month = _calendarMonth;
+    final now = DateTime.now();
+    final isCurrentMonth = month.year == now.year && month.month == now.month;
+
+    final firstDayOfMonth = DateTime(month.year, month.month, 1);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    // Monday-first weekday index (0 = Monday ... 6 = Sunday).
+    final leadingBlanks = (firstDayOfMonth.weekday - 1) % 7;
 
     return _whiteCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Last 35 days', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
-            children: days
-                .map((d) => Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: d.active ? AppColors.purple : AppColors.pageBackground,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                    ))
-                .toList(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => _goToMonth(-1),
+                tooltip: 'Previous month',
+              ),
+              Text(
+                '${_monthNames[month.month - 1]} ${month.year}',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: isCurrentMonth ? null : () => _goToMonth(1),
+                tooltip: 'Next month',
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Row(
+            children: [
+              _WeekdayLabel('M'), _WeekdayLabel('T'), _WeekdayLabel('W'),
+              _WeekdayLabel('T'), _WeekdayLabel('F'), _WeekdayLabel('S'), _WeekdayLabel('S'),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (_loadingCalendar)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, mainAxisSpacing: 4, crossAxisSpacing: 4),
+              itemCount: leadingBlanks + daysInMonth,
+              itemBuilder: (context, index) {
+                if (index < leadingBlanks) return const SizedBox.shrink();
+                final day = index - leadingBlanks + 1;
+                final dateKey = '${month.year.toString().padLeft(4, '0')}-${month.month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+                final isActive = _calendarActiveDates.contains(dateKey);
+                final isToday = isCurrentMonth && day == now.day;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isActive ? AppColors.purple : AppColors.pageBackground,
+                    borderRadius: BorderRadius.circular(8),
+                    border: isToday ? Border.all(color: AppColors.purple, width: 1.5) : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$day',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+                      color: isActive ? Colors.white : AppColors.textPrimary,
+                    ),
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(width: 12, height: 12, decoration: BoxDecoration(color: AppColors.purple, borderRadius: BorderRadius.circular(3))),
+              const SizedBox(width: 6),
+              const Text('Active day', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ],
           ),
         ],
       ),
@@ -727,4 +833,19 @@ class _ActionItem {
   final Color color;
   final VoidCallback onTap;
   _ActionItem(this.icon, this.label, this.color, this.onTap);
+}
+
+// --- Learning Calendar month view (additive) ---
+class _WeekdayLabel extends StatelessWidget {
+  final String label;
+  const _WeekdayLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Center(
+        child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+      ),
+    );
+  }
 }

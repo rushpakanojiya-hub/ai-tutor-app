@@ -9,6 +9,7 @@ import '../../providers/lesson_provider.dart';
 import '../../services/storage_service.dart';
 import '../../widgets/lesson_card.dart';
 import '../../widgets/skeleton_box.dart';
+import '../courses/lesson_management_screen.dart';
 
 /// Feature 3: ordered list of lessons within a subject, each showing a
 /// completion checkmark backed by real, persisted progress
@@ -53,6 +54,23 @@ class _LessonsScreenState extends State<LessonsScreen> {
               tooltip: 'Assignments',
               icon: const Icon(Icons.assignment_rounded),
               onPressed: () => context.push('/subject-assignments', extra: {'subjectId': widget.subjectId, 'subjectName': widget.subjectName}),
+            ),
+          // Lesson Resource Management (additive): teachers and admins
+          // manage this subject's lessons from here - everything else
+          // about this screen (student browsing/playing) is unchanged.
+          if (const ['teacher', 'admin'].contains(context.watch<AuthProvider>().currentUser?.role))
+            IconButton(
+              tooltip: 'Manage Lessons',
+              icon: const Icon(Icons.edit_note_rounded),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => LessonManagementScreen(courseId: widget.subjectId, courseName: widget.subjectName),
+                  ),
+                );
+                if (mounted) context.read<LessonProvider>().loadLessons(widget.subjectId);
+              },
             ),
         ],
       ),

@@ -1,4 +1,5 @@
 import '../core/constants/api_constants.dart';
+import '../core/utils/safe_parse.dart';
 import '../models/ai_session.dart';
 import '../models/recommendation.dart';
 import 'api_service.dart';
@@ -32,8 +33,19 @@ class AiService {
       'language': language,
       'mode': mode,
     });
-    final data = response['data'] as Map<String, dynamic>;
-    return ChatResult(sessionId: data['session_id'] as int, reply: data['reply'] as String);
+    final data = response['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('AI chat failed: unexpected server response.');
+    }
+    final parsedSessionId = safeInt(data['session_id']);
+    final rawReply = data['reply'];
+    final reply = rawReply is String
+        ? (rawReply.isNotEmpty ? rawReply : null)
+        : (rawReply is num ? rawReply.toString() : null);
+    if (parsedSessionId == null || reply == null) {
+      throw Exception('AI chat failed: server response is missing required fields.');
+    }
+    return ChatResult(sessionId: parsedSessionId, reply: reply);
   }
 
   Future<List<AiSessionModel>> fetchSessions() async {

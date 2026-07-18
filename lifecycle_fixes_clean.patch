@@ -1,0 +1,502 @@
+diff --git a/frontend/lib/main.dart b/frontend/lib/main.dart
+index a76cd5e..c262e2c 100644
+--- a/frontend/lib/main.dart
++++ b/frontend/lib/main.dart
+@@ -1,4 +1,5 @@
+ import 'package:flutter/material.dart';
++import 'package:go_router/go_router.dart';
+ import 'package:provider/provider.dart';
+ import 'core/routes/app_router.dart';
+ import 'core/theme/app_theme.dart';
+@@ -31,17 +32,45 @@ class AiTutorApp extends StatelessWidget {
+         // Lesson videos: YouTube recommended-videos integration.
+         ChangeNotifierProvider(create: (_) => YoutubeProvider()),
+       ],
+-      child: Consumer<AuthProvider>(
+-        builder: (context, authProvider, _) {
+-          final router = AppRouter(authProvider).router;
+-          return MaterialApp.router(
+-            title: 'AI Tutor',
+-            debugShowCheckedModeBanner: false,
+-            theme: AppTheme.lightTheme,
+-            routerConfig: router,
+-          );
+-        },
+-      ),
++      child: const _AppRoot(),
++    );
++  }
++}
++
++/// Hosts the single, long-lived GoRouter instance.
++///
++/// QA fix ("Router rebuild issue"): this used to be a Consumer<AuthProvider>
++/// wrapping MaterialApp.router, building `AppRouter(authProvider).router`
++/// fresh inside the builder - so every single authProvider.notifyListeners()
++/// call (login, logout, a profile field updating, anything) constructed a
++/// brand new GoRouter, discarding the entire navigation stack. GoRouter
++/// already has its own mechanism for reacting to auth changes without a
++/// rebuild - `refreshListenable: authProvider.statusNotifier` inside
++/// AppRouter - so the router itself only needs to be built once, here in
++/// initState, and never rebuilt for the lifetime of the app.
++class _AppRoot extends StatefulWidget {
++  const _AppRoot();
++
++  @override
++  State<_AppRoot> createState() => _AppRootState();
++}
++
++class _AppRootState extends State<_AppRoot> {
++  late final GoRouter _router;
++
++  @override
++  void initState() {
++    super.initState();
++    _router = AppRouter(context.read<AuthProvider>()).router;
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return MaterialApp.router(
++      title: 'AI Tutor',
++      debugShowCheckedModeBanner: false,
++      theme: AppTheme.lightTheme,
++      routerConfig: _router,
+     );
+   }
+ }
+diff --git a/frontend/lib/screens/admin/teacher_applications_screen.dart b/frontend/lib/screens/admin/teacher_applications_screen.dart
+index 340e611..9ffcbf7 100644
+--- a/frontend/lib/screens/admin/teacher_applications_screen.dart
++++ b/frontend/lib/screens/admin/teacher_applications_screen.dart
+@@ -47,10 +47,9 @@ class _TeacherApplicationsScreenState extends State<TeacherApplicationsScreen> {
+     setState(() => _processingIds.add(app.id));
+     try {
+       await _adminService.approveTeacher(app.id);
++      if (!mounted) return;
+       setState(() => _applications.removeWhere((a) => a.id == app.id));
+-      if (mounted) {
+-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} approved - they can now log in.')));
+-      }
++      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} approved - they can now log in.')));
+     } catch (e) {
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to approve. Please try again.')));
+@@ -72,15 +71,14 @@ class _TeacherApplicationsScreenState extends State<TeacherApplicationsScreen> {
+         ],
+       ),
+     );
+-    if (confirmed != true) return;
++    if (!mounted || confirmed != true) return;
+ 
+     setState(() => _processingIds.add(app.id));
+     try {
+       await _adminService.rejectTeacher(app.id);
++      if (!mounted) return;
+       setState(() => _applications.removeWhere((a) => a.id == app.id));
+-      if (mounted) {
+-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} rejected.')));
+-      }
++      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} rejected.')));
+     } catch (e) {
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to reject. Please try again.')));
+diff --git a/frontend/lib/screens/assignments/create_assignment_screen.dart b/frontend/lib/screens/assignments/create_assignment_screen.dart
+index c88e50c..9505b38 100644
+--- a/frontend/lib/screens/assignments/create_assignment_screen.dart
++++ b/frontend/lib/screens/assignments/create_assignment_screen.dart
+@@ -70,12 +70,13 @@ class _CreateAssignmentScreenState extends State<CreateAssignmentScreen> {
+         topic: _topicController.text.trim(),
+         difficulty: _difficulty,
+       );
++      if (!mounted) return;
+       _titleController.text = draft.title;
+       _descriptionController.text = draft.description;
+       _instructionsController.text = draft.instructions;
+       _estimatedMinutes = draft.estimatedMinutes;
+     } catch (e) {
+-      setState(() => _error = 'Could not generate a draft. Please try again or fill it in manually.');
++      if (mounted) setState(() => _error = 'Could not generate a draft. Please try again or fill it in manually.');
+     } finally {
+       if (mounted) setState(() => _generating = false);
+     }
+@@ -110,7 +111,7 @@ class _CreateAssignmentScreenState extends State<CreateAssignmentScreen> {
+         context.pop();
+       }
+     } catch (e) {
+-      setState(() => _error = 'Failed to create assignment. Please try again.');
++      if (mounted) setState(() => _error = 'Failed to create assignment. Please try again.');
+     } finally {
+       if (mounted) setState(() => _saving = false);
+     }
+diff --git a/frontend/lib/screens/assignments/my_assignments_screen.dart b/frontend/lib/screens/assignments/my_assignments_screen.dart
+index 05aba1c..084c9b5 100644
+--- a/frontend/lib/screens/assignments/my_assignments_screen.dart
++++ b/frontend/lib/screens/assignments/my_assignments_screen.dart
+@@ -45,6 +45,7 @@ class _MyAssignmentsScreenState extends State<MyAssignmentsScreen> {
+   Future<void> _setStatus(AssignmentModel a, Future<void> Function(int) action) async {
+     try {
+       await action(a.id);
++      if (!mounted) return;
+       _load();
+     } on ApiException catch (e) {
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+@@ -92,6 +93,7 @@ class _MyAssignmentsScreenState extends State<MyAssignmentsScreen> {
+         backgroundColor: AppColors.purple,
+         onPressed: () async {
+           await context.push('/create-assignment');
++          if (!mounted) return;
+           _load();
+         },
+         child: const Icon(Icons.add_rounded, color: Colors.white),
+diff --git a/frontend/lib/screens/badges/my_badges_screen.dart b/frontend/lib/screens/badges/my_badges_screen.dart
+index 3d47652..6e2cf46 100644
+--- a/frontend/lib/screens/badges/my_badges_screen.dart
++++ b/frontend/lib/screens/badges/my_badges_screen.dart
+@@ -28,16 +28,27 @@ class _MyBadgesScreenState extends State<MyBadgesScreen> {
+   }
+ 
+   Future<void> _load() async {
++    final isRefresh = _badges.isNotEmpty;
+     setState(() {
+-      _loading = true;
++      if (!isRefresh) _loading = true;
+       _error = null;
+     });
+     try {
+-      _badges = widget.studentId == null
++      final fetched = widget.studentId == null
+           ? await _badgeService.fetchMine()
+           : await _badgeService.fetchForStudent(widget.studentId!);
++      if (mounted) setState(() => _badges = fetched);
+     } catch (e) {
+-      _error = 'Could not load badges.';
++      if (!mounted) return;
++      if (isRefresh) {
++        // Keep the previously loaded badges on screen; a failed refresh
++        // shouldn't wipe out data the user can already see.
++        ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text('Could not refresh badges. Showing your last loaded badges.')),
++        );
++      } else {
++        setState(() => _error = 'Could not load badges.');
++      }
+     }
+     if (mounted) setState(() => _loading = false);
+   }
+diff --git a/frontend/lib/screens/certificates/my_certificates_screen.dart b/frontend/lib/screens/certificates/my_certificates_screen.dart
+index 4386523..477afb0 100644
+--- a/frontend/lib/screens/certificates/my_certificates_screen.dart
++++ b/frontend/lib/screens/certificates/my_certificates_screen.dart
+@@ -32,24 +32,34 @@ class _MyCertificatesScreenState extends State<MyCertificatesScreen> {
+   }
+ 
+   Future<void> _load() async {
++    final isRefresh = _certificates.isNotEmpty;
+     setState(() {
+-      _loading = true;
++      if (!isRefresh) _loading = true;
+       _error = null;
+     });
+     try {
++      List<CertificateModel> fetched;
+       switch (widget.mode) {
+         case CertificateListMode.mine:
+-          _certificates = await _service.fetchMine();
++          fetched = await _service.fetchMine();
+           break;
+         case CertificateListMode.teacher:
+-          _certificates = await _service.fetchForTeacher();
++          fetched = await _service.fetchForTeacher();
+           break;
+         case CertificateListMode.admin:
+-          _certificates = await _service.fetchAllForAdmin();
++          fetched = await _service.fetchAllForAdmin();
+           break;
+       }
++      if (mounted) setState(() => _certificates = fetched);
+     } catch (e) {
+-      _error = 'Could not load certificates.';
++      if (!mounted) return;
++      if (isRefresh) {
++        ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text('Could not refresh certificates. Showing your last loaded certificates.')),
++        );
++      } else {
++        setState(() => _error = 'Could not load certificates.');
++      }
+     }
+     if (mounted) setState(() => _loading = false);
+   }
+diff --git a/frontend/lib/screens/courses/admin_course_management_screen.dart b/frontend/lib/screens/courses/admin_course_management_screen.dart
+index 06bad17..c02789d 100644
+--- a/frontend/lib/screens/courses/admin_course_management_screen.dart
++++ b/frontend/lib/screens/courses/admin_course_management_screen.dart
+@@ -1,6 +1,7 @@
+ import 'package:flutter/material.dart';
+ import '../../core/theme/app_colors.dart';
+ import '../../models/course_model.dart';
++import '../../services/api_service.dart';
+ import '../../services/course_service.dart';
+ import 'create_edit_course_screen.dart';
+ import 'course_categories_screen.dart';
+@@ -85,7 +86,8 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
+ 
+     try {
+       await _service.deleteCourse(course.id);
+-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Course deleted.')));
++      if (!mounted) return;
++      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Course deleted.')));
+       _load();
+     } catch (e) {
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete course.')));
+@@ -99,12 +101,16 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
+       } else {
+         await _service.publishCourse(course.id);
+       }
++      if (!mounted) return;
+       _load();
++    } on ApiException catch (e) {
++      // Show the backend's actual validation message instead of a
++      // hardcoded guess - "at least one lesson" was previously shown for
++      // every publish failure, even unrelated ones.
++      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+     } catch (e) {
+       if (mounted) {
+-        final message = course.status == 'published'
+-            ? 'Failed to unpublish course.'
+-            : 'At least one lesson is required before publishing.';
++        final message = course.status == 'published' ? 'Failed to unpublish course.' : 'Failed to publish course.';
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+       }
+     }
+@@ -121,6 +127,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
+             tooltip: 'Manage Categories',
+             onPressed: () async {
+               await Navigator.push(context, MaterialPageRoute(builder: (_) => const CourseCategoriesScreen()));
++              if (!mounted) return;
+               _loadCategories();
+             },
+           ),
+@@ -132,6 +139,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
+             context,
+             MaterialPageRoute(builder: (_) => const CreateEditCourseScreen()),
+           );
++          if (!mounted) return;
+           if (created == true) _load();
+         },
+         backgroundColor: AppColors.purple,
+@@ -287,6 +295,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
+                       context,
+                       MaterialPageRoute(builder: (_) => CreateEditCourseScreen(course: course)),
+                     );
++                    if (!mounted) return;
+                     if (updated == true) _load();
+                   } else if (value == 'lessons') {
+                     Navigator.push(context, MaterialPageRoute(builder: (_) => LessonManagementScreen(courseId: course.id, courseName: course.name)));
+diff --git a/frontend/lib/screens/courses/course_categories_screen.dart b/frontend/lib/screens/courses/course_categories_screen.dart
+index ecafa28..6fc715a 100644
+--- a/frontend/lib/screens/courses/course_categories_screen.dart
++++ b/frontend/lib/screens/courses/course_categories_screen.dart
+@@ -59,6 +59,7 @@ class _CourseCategoriesScreenState extends State<CourseCategoriesScreen> {
+         } else {
+           await _service.updateCategory(existing.id, name: result);
+         }
++        if (!mounted) return;
+         _load();
+       } catch (e) {
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save category.')));
+diff --git a/frontend/lib/screens/courses/create_edit_course_screen.dart b/frontend/lib/screens/courses/create_edit_course_screen.dart
+index ed91058..f6743ab 100644
+--- a/frontend/lib/screens/courses/create_edit_course_screen.dart
++++ b/frontend/lib/screens/courses/create_edit_course_screen.dart
+@@ -52,7 +52,10 @@ class _CreateEditCourseScreenState extends State<CreateEditCourseScreen> {
+   Future<void> _loadCategories() async {
+     try {
+       _categories = await _service.listCategories();
+-      _selectedCategoryId ??= _categories.isNotEmpty ? _categories.first.id : null;
++      final savedCategoryExists = _categories.any((c) => c.id == _selectedCategoryId);
++      if (!savedCategoryExists) {
++        _selectedCategoryId = _categories.isNotEmpty ? _categories.first.id : null;
++      }
+     } catch (_) {
+       // best-effort
+     }
+diff --git a/frontend/lib/screens/leaderboard/manage_students_screen.dart b/frontend/lib/screens/leaderboard/manage_students_screen.dart
+index b49d5b2..09d8aa5 100644
+--- a/frontend/lib/screens/leaderboard/manage_students_screen.dart
++++ b/frontend/lib/screens/leaderboard/manage_students_screen.dart
+@@ -70,7 +70,8 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
+ 
+       try {
+         await _service.assignClassSection(student.id, classValue: classController.text.trim(), section: sectionController.text.trim());
+-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated.')));
++        if (!mounted) return;
++        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated.')));
+         _load();
+       } catch (e) {
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update.')));
+diff --git a/frontend/lib/screens/lessons/lesson_player_screen.dart b/frontend/lib/screens/lessons/lesson_player_screen.dart
+index 794f9e9..5f9bf55 100644
+--- a/frontend/lib/screens/lessons/lesson_player_screen.dart
++++ b/frontend/lib/screens/lessons/lesson_player_screen.dart
+@@ -38,6 +38,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+ 
+   VideoPlayerController? _videoController;
+   ChewieController? _chewieController;
++  bool _videoInitFailed = false;
+ 
+   @override
+   void initState() {
+@@ -86,6 +87,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+   }
+ 
+   Future<void> _initVideo(String url) async {
++    _videoInitFailed = false;
+     try {
+       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+       await controller.initialize();
+@@ -103,6 +105,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+     } catch (e) {
+       _videoController = null;
+       _chewieController = null;
++      if (mounted) setState(() => _videoInitFailed = true);
+     }
+   }
+ 
+@@ -111,6 +114,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+     _videoController?.dispose();
+     _chewieController = null;
+     _videoController = null;
++    _videoInitFailed = false;
+   }
+ 
+   @override
+@@ -476,6 +480,29 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+       );
+     }
+ 
++    if (_videoInitFailed) {
++      return Container(
++        height: 220,
++        color: Colors.black,
++        child: Center(
++          child: Column(
++            mainAxisSize: MainAxisSize.min,
++            children: [
++              const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 36),
++              const SizedBox(height: 8),
++              const Text('Could not load this video.', style: TextStyle(color: Colors.white)),
++              const SizedBox(height: 12),
++              OutlinedButton(
++                style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white54)),
++                onPressed: () => _initVideo(ApiConstants.resolveMediaUrl(_lesson!.videoUrl)),
++                child: const Text('Retry'),
++              ),
++            ],
++          ),
++        ),
++      );
++    }
++
+     if (_chewieController == null) {
+       return Container(
+         height: 220,
+diff --git a/frontend/lib/screens/liveclass/create_live_class_screen.dart b/frontend/lib/screens/liveclass/create_live_class_screen.dart
+index 8ea0f56..b7fc076 100644
+--- a/frontend/lib/screens/liveclass/create_live_class_screen.dart
++++ b/frontend/lib/screens/liveclass/create_live_class_screen.dart
+@@ -60,6 +60,13 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
+       return;
+     }
+ 
++    final startMinutes = _startTime.hour * 60 + _startTime.minute;
++    final endMinutes = _endTime.hour * 60 + _endTime.minute;
++    if (endMinutes <= startMinutes) {
++      setState(() => _error = 'End time must be after start time.');
++      return;
++    }
++
+     setState(() {
+       _saving = true;
+       _error = null;
+diff --git a/frontend/lib/screens/liveclass/student_live_classes_screen.dart b/frontend/lib/screens/liveclass/student_live_classes_screen.dart
+index a589f2a..81d7adb 100644
+--- a/frontend/lib/screens/liveclass/student_live_classes_screen.dart
++++ b/frontend/lib/screens/liveclass/student_live_classes_screen.dart
+@@ -226,7 +226,7 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
+               child: Text(
+                 c.meetingStatus == 'live'
+                     ? 'Live now'
+-                    : (withinWindow ? 'Starts in ${_countdownText(dt)}' : 'Starts in ${_countdownText(dt)}'),
++                    : (withinWindow ? 'In progress' : 'Starts in ${_countdownText(dt)}'),
+                 style: const TextStyle(color: AppColors.purple, fontSize: 11, fontWeight: FontWeight.w700),
+               ),
+             ),
+diff --git a/frontend/lib/screens/notifications/notification_center_screen.dart b/frontend/lib/screens/notifications/notification_center_screen.dart
+index 132372b..ba9c2cf 100644
+--- a/frontend/lib/screens/notifications/notification_center_screen.dart
++++ b/frontend/lib/screens/notifications/notification_center_screen.dart
+@@ -58,6 +58,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
+           TextButton(
+             onPressed: () async {
+               await _service.markAllRead();
++              if (!mounted) return;
+               _load();
+             },
+             child: const Text('Mark all read'),
+@@ -89,6 +90,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
+                               onTap: () async {
+                                 if (!n.isRead) {
+                                   await _service.markRead(n.id);
++                                  if (!mounted) return;
+                                   _load();
+                                 }
+                               },
+diff --git a/frontend/lib/screens/quiz/ai_quiz_generator_screen.dart b/frontend/lib/screens/quiz/ai_quiz_generator_screen.dart
+index 684b628..afa6504 100644
+--- a/frontend/lib/screens/quiz/ai_quiz_generator_screen.dart
++++ b/frontend/lib/screens/quiz/ai_quiz_generator_screen.dart
+@@ -74,10 +74,12 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
+       );
+ 
+       if (questions.isEmpty) {
+-        setState(() {
+-          _generating = false;
+-          _error = 'Could not generate a quiz for that subject. Please try again.';
+-        });
++        if (mounted) {
++          setState(() {
++            _generating = false;
++            _error = 'Could not generate a quiz for that subject. Please try again.';
++          });
++        }
+         return;
+       }
+ 
+@@ -92,7 +94,7 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
+         );
+       }
+     } catch (e) {
+-      setState(() => _error = 'Something went wrong generating the quiz. Please try again.');
++      if (mounted) setState(() => _error = 'Something went wrong generating the quiz. Please try again.');
+     } finally {
+       if (mounted) setState(() => _generating = false);
+     }
+diff --git a/frontend/lib/widgets/voice_input_button.dart b/frontend/lib/widgets/voice_input_button.dart
+index fa4db23..deb3fa5 100644
+--- a/frontend/lib/widgets/voice_input_button.dart
++++ b/frontend/lib/widgets/voice_input_button.dart
+@@ -46,10 +46,11 @@ class _VoiceInputButtonState extends State<VoiceInputButton> {
+ 
+   Future<void> _toggleListening() async {
+     await _ensureInitialized();
+-    if (!_isAvailable) return;
++    if (!mounted || !_isAvailable) return;
+ 
+     if (_isListening) {
+       await _speech.stop();
++      if (!mounted) return;
+       setState(() => _isListening = false);
+       return;
+     }

@@ -28,16 +28,27 @@ class _MyBadgesScreenState extends State<MyBadgesScreen> {
   }
 
   Future<void> _load() async {
+    final isRefresh = _badges.isNotEmpty;
     setState(() {
-      _loading = true;
+      if (!isRefresh) _loading = true;
       _error = null;
     });
     try {
-      _badges = widget.studentId == null
+      final fetched = widget.studentId == null
           ? await _badgeService.fetchMine()
           : await _badgeService.fetchForStudent(widget.studentId!);
+      if (mounted) setState(() => _badges = fetched);
     } catch (e) {
-      _error = 'Could not load badges.';
+      if (!mounted) return;
+      if (isRefresh) {
+        // Keep the previously loaded badges on screen; a failed refresh
+        // shouldn't wipe out data the user can already see.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh badges. Showing your last loaded badges.')),
+        );
+      } else {
+        setState(() => _error = 'Could not load badges.');
+      }
     }
     if (mounted) setState(() => _loading = false);
   }

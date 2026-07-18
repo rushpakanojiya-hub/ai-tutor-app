@@ -226,7 +226,7 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
               child: Text(
                 c.meetingStatus == 'live'
                     ? 'Live now'
-                    : (withinWindow ? 'Starts in ${_countdownText(dt)}' : 'Starts in ${_countdownText(dt)}'),
+                    : (withinWindow ? 'In progress' : 'Starts in ${_countdownText(dt)}'),
                 style: const TextStyle(color: AppColors.purple, fontSize: 11, fontWeight: FontWeight.w700),
               ),
             ),

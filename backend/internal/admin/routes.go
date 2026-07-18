@@ -10,5 +10,7 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware, r
 	group.Use(authMiddleware, requireAdmin)
 	{
 		group.GET("/dashboard", handler.GetDashboard)
+		// Student Progress Overview (additive)
+		group.GET("/students/progress", handler.GetStudentProgress)
 	}
 }

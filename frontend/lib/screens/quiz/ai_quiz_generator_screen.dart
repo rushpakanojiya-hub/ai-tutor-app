@@ -74,10 +74,12 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
       );
 
       if (questions.isEmpty) {
-        setState(() {
-          _generating = false;
-          _error = 'Could not generate a quiz for that subject. Please try again.';
-        });
+        if (mounted) {
+          setState(() {
+            _generating = false;
+            _error = 'Could not generate a quiz for that subject. Please try again.';
+          });
+        }
         return;
       }
 
@@ -92,7 +94,7 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
         );
       }
     } catch (e) {
-      setState(() => _error = 'Something went wrong generating the quiz. Please try again.');
+      if (mounted) setState(() => _error = 'Something went wrong generating the quiz. Please try again.');
     } finally {
       if (mounted) setState(() => _generating = false);
     }

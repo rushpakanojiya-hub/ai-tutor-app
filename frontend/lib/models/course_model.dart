@@ -45,10 +45,14 @@ class AdminLessonModel {
   final String title;
   final String description;
   final String videoUrl;
+  final String videoSource; // 'upload' | 'youtube'
   final String pdfUrl;
+  final String pdfTitle;
+  final String pdfDescription;
   final String assignmentUrl;
   final int duration;
   final int orderNumber;
+  final String status; // 'draft' | 'published'
 
   AdminLessonModel({
     required this.id,
@@ -56,10 +60,14 @@ class AdminLessonModel {
     required this.title,
     required this.description,
     required this.videoUrl,
+    required this.videoSource,
     required this.pdfUrl,
+    required this.pdfTitle,
+    required this.pdfDescription,
     required this.assignmentUrl,
     required this.duration,
     required this.orderNumber,
+    required this.status,
   });
 
   factory AdminLessonModel.fromJson(Map<String, dynamic> json) {
@@ -69,10 +77,20 @@ class AdminLessonModel {
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',
       videoUrl: json['video_url'] as String? ?? '',
+      videoSource: json['video_source'] as String? ?? 'upload',
       pdfUrl: json['pdf_url'] as String? ?? '',
+      pdfTitle: json['pdf_title'] as String? ?? '',
+      pdfDescription: json['pdf_description'] as String? ?? '',
       assignmentUrl: json['assignment_url'] as String? ?? '',
       duration: json['duration'] as int? ?? 0,
       orderNumber: json['order_number'] as int? ?? 0,
+      status: json['status'] as String? ?? 'draft',
     );
   }
+
+  // Lesson Resource Management (Video/PDF/publish) helper getters.
+  String get youtubeUrl => videoSource == 'youtube' ? videoUrl : '';
+  bool get hasVideo => videoUrl.isNotEmpty;
+  bool get hasPdf => pdfUrl.isNotEmpty;
+  bool get isPublished => status == 'published';
 }

@@ -2,6 +2,7 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/theme/app_colors.dart';
@@ -38,6 +39,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
 
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
+  bool _videoInitFailed = false;
 
   @override
   void initState() {
@@ -62,7 +64,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
       if (!mounted) return;
       setState(() => _lesson = lesson);
 
-      if (lesson.videoUrl.isNotEmpty) {
+      if (lesson.videoUrl.isNotEmpty && lesson.videoSource != 'youtube') {
         await _initVideo(ApiConstants.resolveMediaUrl(lesson.videoUrl));
       }
 
@@ -86,6 +88,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
   }
 
   Future<void> _initVideo(String url) async {
+    _videoInitFailed = false;
     try {
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await controller.initialize();
@@ -103,6 +106,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
     } catch (e) {
       _videoController = null;
       _chewieController = null;
+      if (mounted) setState(() => _videoInitFailed = true);
     }
   }
 
@@ -111,6 +115,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
     _videoController?.dispose();
     _chewieController = null;
     _videoController = null;
+    _videoInitFailed = false;
   }
 
   @override
@@ -439,6 +444,43 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
   }
 
   Widget _buildMediaArea() {
+    if (_lesson != null && _lesson!.videoUrl.isNotEmpty && _lesson!.videoSource == 'youtube') {
+      final thumb = _lesson?.thumbnailUrl ?? '';
+      return GestureDetector(
+        onTap: () async {
+          final uri = Uri.tryParse(_lesson!.videoUrl);
+          if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        child: Container(
+          height: 220,
+          color: Colors.black12,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumb.isNotEmpty)
+                Image.network(
+                  ApiConstants.resolveMediaUrl(thumb),
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                ),
+              Container(
+                color: Colors.black.withOpacity(0.35),
+                alignment: Alignment.center,
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 56),
+                    SizedBox(height: 8),
+                    Text('Watch on YouTube', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (_lesson == null || _lesson!.videoUrl.isEmpty) {
       // No placeholder/cartoon video — show the lesson's educational
       // thumbnail (if any) with a message pointing to the notes below.
@@ -473,6 +515,29 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
               ),
+      );
+    }
+
+    if (_videoInitFailed) {
+      return Container(
+        height: 220,
+        color: Colors.black,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 36),
+              const SizedBox(height: 8),
+              const Text('Could not load this video.', style: TextStyle(color: Colors.white)),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white54)),
+                onPressed: () => _initVideo(ApiConstants.resolveMediaUrl(_lesson!.videoUrl)),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

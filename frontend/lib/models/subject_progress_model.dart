@@ -1,3 +1,5 @@
+import '../core/utils/safe_parse.dart';
+
 /// Mirrors the backend's progress.SubjectProgress: how many of a subject's
 /// lessons the current user has completed, and which specific lesson IDs
 /// (used to set LessonModel.isCompleted without a call per lesson).
@@ -23,7 +25,8 @@ class SubjectProgressModel {
       completedLessons: json['completed_lessons'] as int? ?? 0,
       percentage: (json['percentage'] as num?)?.toDouble() ?? 0.0,
       completedLessonIds: (json['completed_lesson_ids'] as List<dynamic>? ?? [])
-          .map((e) => e as int)
+          .map((e) => safeInt(e))
+          .whereType<int>()
           .toList(),
     );
   }

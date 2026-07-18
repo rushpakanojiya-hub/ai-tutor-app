@@ -1,0 +1,1998 @@
+diff --git a/backend/internal/lessons/handler.go b/backend/internal/lessons/handler.go
+index 4b38d08..e2f5d0f 100644
+--- a/backend/internal/lessons/handler.go
++++ b/backend/internal/lessons/handler.go
+@@ -65,7 +65,7 @@ func (h *Handler) GetByID(c *gin.Context) {
+ // QA fix: previously had no role check - any authenticated user could
+ // create a lesson.
+ func (h *Handler) Create(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	var req CreateLessonRequest
+@@ -85,9 +85,17 @@ func (h *Handler) Create(c *gin.Context) {
+ 
+ // --- Admin Course Management (additive) ---
+ 
+-func requireAdmin(c *gin.Context) bool {
+-	if c.GetString("role") != "admin" {
+-		utils.RespondError(c, http.StatusForbidden, "Only admins can manage lessons")
++// requireTeacherOrAdmin gates every lesson-management action (create,
++// edit, delete, upload/replace/remove video or PDF, publish/unpublish).
++// Previously this was admin-only; the Lesson Resource Management
++// workflow explicitly gives teachers the same rights here, while admin
++// keeps full access. This check is scoped to the lessons package only -
++// it does not change permissions anywhere else (e.g. subjects/courses
++// remain admin-only).
++func requireTeacherOrAdmin(c *gin.Context) bool {
++	role := c.GetString("role")
++	if role != "admin" && role != "teacher" {
++		utils.RespondError(c, http.StatusForbidden, "Only teachers and admins can manage lessons")
+ 		return false
+ 	}
+ 	return true
+@@ -95,7 +103,7 @@ func requireAdmin(c *gin.Context) bool {
+ 
+ // Update handles PUT /api/lessons/:id (admin-only).
+ func (h *Handler) Update(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	id, err := strconv.Atoi(c.Param("id"))
+@@ -121,7 +129,7 @@ func (h *Handler) Update(c *gin.Context) {
+ 
+ // Delete handles DELETE /api/lessons/:id (admin-only).
+ func (h *Handler) Delete(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	id, err := strconv.Atoi(c.Param("id"))
+@@ -143,7 +151,7 @@ func (h *Handler) Delete(c *gin.Context) {
+ // Reorder handles POST /api/subjects/:id/lessons/reorder (admin-only) -
+ // drag-and-drop reordering.
+ func (h *Handler) Reorder(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	var req ReorderLessonsRequest
+@@ -202,7 +210,7 @@ func readUploadedFile(c *gin.Context, allowedExtensions []string) ([]byte, strin
+ 
+ // UploadVideo handles POST /api/lessons/:id/upload-video (admin-only, multipart).
+ func (h *Handler) UploadVideo(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	id, err := strconv.Atoi(c.Param("id"))
+@@ -225,7 +233,7 @@ func (h *Handler) UploadVideo(c *gin.Context) {
+ 
+ // UploadPDF handles POST /api/lessons/:id/upload-pdf (admin-only, multipart).
+ func (h *Handler) UploadPDF(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	id, err := strconv.Atoi(c.Param("id"))
+@@ -248,7 +256,7 @@ func (h *Handler) UploadPDF(c *gin.Context) {
+ 
+ // UploadAssignment handles POST /api/lessons/:id/upload-assignment (admin-only, multipart).
+ func (h *Handler) UploadAssignment(c *gin.Context) {
+-	if !requireAdmin(c) {
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	id, err := strconv.Atoi(c.Param("id"))
+@@ -268,3 +276,108 @@ func (h *Handler) UploadAssignment(c *gin.Context) {
+ 	}
+ 	utils.RespondSuccess(c, http.StatusOK, "Assignment uploaded", gin.H{"assignment_url": url})
+ }
++
++// --- Lesson Resource Management (additive) ---
++
++// Publish handles POST /api/lessons/:id/publish (teacher or admin).
++func (h *Handler) Publish(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
++		return
++	}
++	if err := h.service.Publish(id); err != nil {
++		if errors.Is(err, ErrNoResourceYet) {
++			utils.RespondError(c, http.StatusConflict, "At least one video or PDF resource is required before publishing")
++			return
++		}
++		if errors.Is(err, ErrLessonNotFound) {
++			utils.RespondError(c, http.StatusNotFound, "Lesson not found")
++			return
++		}
++		utils.RespondError(c, http.StatusInternalServerError, "Failed to publish lesson")
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "Lesson published", nil)
++}
++
++// Unpublish handles POST /api/lessons/:id/unpublish (teacher or admin).
++func (h *Handler) Unpublish(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
++		return
++	}
++	if err := h.service.Unpublish(id); err != nil {
++		if errors.Is(err, ErrLessonNotFound) {
++			utils.RespondError(c, http.StatusNotFound, "Lesson not found")
++			return
++		}
++		utils.RespondError(c, http.StatusInternalServerError, "Failed to unpublish lesson")
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "Lesson moved back to draft", nil)
++}
++
++// SetYouTubeURL handles POST /api/lessons/:id/youtube-url (teacher or
++// admin) - the "Add YouTube URL" alternative to UploadVideo.
++func (h *Handler) SetYouTubeURL(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
++		return
++	}
++	var req SetYouTubeURLRequest
++	if err := c.ShouldBindJSON(&req); err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "youtube_url is required")
++		return
++	}
++	if err := h.service.SetYouTubeURL(id, req.YouTubeURL); err != nil {
++		utils.RespondError(c, http.StatusBadRequest, err.Error())
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "YouTube video linked", gin.H{"video_url": req.YouTubeURL})
++}
++
++// RemoveVideo handles DELETE /api/lessons/:id/video (teacher or admin).
++func (h *Handler) RemoveVideo(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
++		return
++	}
++	if err := h.service.RemoveVideo(id); err != nil {
++		utils.RespondError(c, http.StatusInternalServerError, "Failed to remove video")
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "Video removed", nil)
++}
++
++// RemovePDF handles DELETE /api/lessons/:id/pdf (teacher or admin).
++func (h *Handler) RemovePDF(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid lesson id")
++		return
++	}
++	if err := h.service.RemovePDF(id); err != nil {
++		utils.RespondError(c, http.StatusInternalServerError, "Failed to remove PDF")
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "PDF removed", nil)
++}
+diff --git a/backend/internal/lessons/model.go b/backend/internal/lessons/model.go
+index 779ea22..0755f78 100644
+--- a/backend/internal/lessons/model.go
++++ b/backend/internal/lessons/model.go
+@@ -16,9 +16,19 @@ type Lesson struct {
+ 	ThumbnailURL   string    `json:"thumbnail_url"`
+ 	Duration       int       `json:"duration"` // minutes
+ 	OrderNumber    int       `json:"order_number"`
++	// Status is "draft" or "published" - Lesson Resource Management
++	// workflow (additive; see migration 027). Existing rows default to
++	// "published" so this never hides content that was already visible.
++	Status         string    `json:"status"`
+ 	CreatedAt      time.Time `json:"created_at"`
+ }
+ 
++// Lesson lifecycle values - mirrors subjects.StatusDraft/StatusPublished.
++const (
++	StatusDraft     = "draft"
++	StatusPublished = "published"
++)
++
+ // CreateLessonRequest is the expected JSON body for POST /api/lessons.
+ type CreateLessonRequest struct {
+ 	SubjectID    int    `json:"subject_id" binding:"required"`
+@@ -53,3 +63,11 @@ type ReorderItem struct {
+ type ReorderLessonsRequest struct {
+ 	Items []ReorderItem `json:"items" binding:"required"`
+ }
++
++// --- Lesson Resource Management (additive) ---
++
++// SetYouTubeURLRequest is the body for POST /api/lessons/:id/youtube-url -
++// the "Add YouTube URL" alternative to uploading a video file.
++type SetYouTubeURLRequest struct {
++	YouTubeURL string `json:"youtube_url" binding:"required"`
++}
+diff --git a/backend/internal/lessons/repository.go b/backend/internal/lessons/repository.go
+index 7b148f1..baf8fbd 100644
+--- a/backend/internal/lessons/repository.go
++++ b/backend/internal/lessons/repository.go
+@@ -18,17 +18,21 @@ func NewRepository(db *sql.DB) *Repository {
+ 	return &Repository{db: db}
+ }
+ 
+-const selectColumns = `id, subject_id, title, description, video_url, pdf_url, assignment_url, thumbnail_url, duration, order_number, created_at`
++const selectColumns = `id, subject_id, title, description, video_url, pdf_url, assignment_url, thumbnail_url, duration, order_number, status, created_at`
+ 
+ func scanLesson(row interface{ Scan(...any) error }) (Lesson, error) {
+ 	var l Lesson
+-	var description, videoURL, pdfURL, assignmentURL, thumbnailURL sql.NullString
+-	err := row.Scan(&l.ID, &l.SubjectID, &l.Title, &description, &videoURL, &pdfURL, &assignmentURL, &thumbnailURL, &l.Duration, &l.OrderNumber, &l.CreatedAt)
++	var description, videoURL, pdfURL, assignmentURL, thumbnailURL, status sql.NullString
++	err := row.Scan(&l.ID, &l.SubjectID, &l.Title, &description, &videoURL, &pdfURL, &assignmentURL, &thumbnailURL, &l.Duration, &l.OrderNumber, &status, &l.CreatedAt)
+ 	l.Description = description.String
+ 	l.VideoURL = videoURL.String
+ 	l.PDFURL = pdfURL.String
+ 	l.AssignmentURL = assignmentURL.String
+ 	l.ThumbnailURL = thumbnailURL.String
++	l.Status = status.String
++	if l.Status == "" {
++		l.Status = StatusPublished
++	}
+ 	return l, err
+ }
+ 
+@@ -67,16 +71,20 @@ func (r *Repository) FindByID(id int) (*Lesson, error) {
+ }
+ 
+ // Create inserts a new lesson and returns its generated ID.
++//
++// New lessons always start as StatusDraft, regardless of the column's
++// table-level default (which stays "published" so pre-existing rows -
++// created before this feature existed - remain visible unchanged).
+ func (r *Repository) Create(req CreateLessonRequest) (int, error) {
+ 	var id int
+ 	query := `
+-		INSERT INTO lessons (subject_id, title, description, video_url, pdf_url, thumbnail_url, duration, order_number)
+-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
++		INSERT INTO lessons (subject_id, title, description, video_url, pdf_url, thumbnail_url, duration, order_number, status)
++		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ 		RETURNING id
+ 	`
+ 	err := r.db.QueryRow(
+ 		query,
+-		req.SubjectID, req.Title, req.Description, req.VideoURL, req.PDFURL, req.ThumbnailURL, req.Duration, req.OrderNumber,
++		req.SubjectID, req.Title, req.Description, req.VideoURL, req.PDFURL, req.ThumbnailURL, req.Duration, req.OrderNumber, StatusDraft,
+ 	).Scan(&id)
+ 	return id, err
+ }
+@@ -172,3 +180,34 @@ func (r *Repository) SetAssignmentURL(id int, url string) error {
+ 	_, err := r.db.Exec(`UPDATE lessons SET assignment_url = $1 WHERE id = $2`, url, id)
+ 	return err
+ }
++
++// --- Lesson Resource Management (additive) ---
++
++// SetStatus mirrors subjects.Repository.SetStatus - flips a lesson
++// between StatusDraft and StatusPublished.
++func (r *Repository) SetStatus(id int, status string) error {
++	res, err := r.db.Exec(`UPDATE lessons SET status = $1 WHERE id = $2`, status, id)
++	if err != nil {
++		return err
++	}
++	rows, _ := res.RowsAffected()
++	if rows == 0 {
++		return ErrLessonNotFound
++	}
++	return nil
++}
++
++// HasResource reports whether the lesson already has a video or a PDF -
++// used to enforce "at least one resource is required before publishing".
++func (r *Repository) HasResource(id int) (bool, error) {
++	var has bool
++	query := `
++		SELECT (COALESCE(video_url, '') != '' OR COALESCE(pdf_url, '') != '')
++		FROM lessons WHERE id = $1
++	`
++	err := r.db.QueryRow(query, id).Scan(&has)
++	if err == sql.ErrNoRows {
++		return false, ErrLessonNotFound
++	}
++	return has, err
++}
+diff --git a/backend/internal/lessons/routes.go b/backend/internal/lessons/routes.go
+index 79501c3..9fdc7c4 100644
+--- a/backend/internal/lessons/routes.go
++++ b/backend/internal/lessons/routes.go
+@@ -18,6 +18,13 @@ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware gi
+ 		lessonsGroup.POST("/:id/upload-video", handler.UploadVideo)
+ 		lessonsGroup.POST("/:id/upload-pdf", handler.UploadPDF)
+ 		lessonsGroup.POST("/:id/upload-assignment", handler.UploadAssignment)
++		// Lesson Resource Management (additive) - teacher-or-admin
++		// gated inside the handler itself.
++		lessonsGroup.POST("/:id/publish", handler.Publish)
++		lessonsGroup.POST("/:id/unpublish", handler.Unpublish)
++		lessonsGroup.POST("/:id/youtube-url", handler.SetYouTubeURL)
++		lessonsGroup.DELETE("/:id/video", handler.RemoveVideo)
++		lessonsGroup.DELETE("/:id/pdf", handler.RemovePDF)
+ 	}
+ 	router.GET("/subjects/:id/lessons", authMiddleware, handler.ListBySubject)
+ 	router.POST("/subjects/:id/lessons/reorder", authMiddleware, handler.Reorder)
+diff --git a/backend/internal/lessons/service.go b/backend/internal/lessons/service.go
+index 51d77f4..ff24989 100644
+--- a/backend/internal/lessons/service.go
++++ b/backend/internal/lessons/service.go
+@@ -3,6 +3,7 @@ package lessons
+ import (
+ 	"errors"
+ 	"log"
++	"strings"
+ 
+ 	"ai-tutor-backend/internal/cloudinary"
+ )
+@@ -11,6 +12,10 @@ import (
+ // uploads elsewhere in the app.
+ const MaxUploadSizeBytes = 25 * 1024 * 1024
+ 
++// ErrNoResourceYet mirrors subjects.ErrNoLessonsYet - a lesson needs at
++// least a video or a PDF before it can be published.
++var ErrNoResourceYet = errors.New("at least one video or PDF resource is required before publishing")
++
+ // Service contains the business logic for lessons.
+ type Service struct {
+ 	repo            *Repository
+@@ -98,3 +103,56 @@ func (s *Service) UploadAssignment(lessonID int, fileBytes []byte, filename stri
+ 	}
+ 	return result.SecureURL, nil
+ }
++
++// --- Lesson Resource Management (additive) ---
++
++// Publish enforces "at least one learning resource (video or PDF) is
++// required before publishing" - mirrors subjects.Service.Publish's
++// "at least one lesson" rule at the level below it.
++func (s *Service) Publish(id int) error {
++	hasResource, err := s.repo.HasResource(id)
++	if err != nil {
++		return err
++	}
++	if !hasResource {
++		return ErrNoResourceYet
++	}
++	return s.repo.SetStatus(id, StatusPublished)
++}
++
++// Unpublish always succeeds - a lesson can go back to draft regardless
++// of what resources it has (matches subjects.Service.Unpublish).
++func (s *Service) Unpublish(id int) error {
++	return s.repo.SetStatus(id, StatusDraft)
++}
++
++// isYouTubeURL is a light heuristic, not a strict validator - it only
++// needs to reject obviously-wrong input before it's stored as a
++// lesson's video_url.
++func isYouTubeURL(url string) bool {
++	lower := strings.ToLower(strings.TrimSpace(url))
++	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
++}
++
++// SetYouTubeURL stores a manually-entered YouTube link as the lesson's
++// video, the alternative to UploadVideo. Reuses the same video_url
++// column/repo method - the frontend tells uploaded-file vs YouTube apart
++// by URL shape, nothing server-side needs to distinguish them.
++func (s *Service) SetYouTubeURL(lessonID int, url string) error {
++	url = strings.TrimSpace(url)
++	if url == "" || !isYouTubeURL(url) {
++		return errors.New("a valid YouTube URL is required")
++	}
++	return s.repo.SetVideoURL(lessonID, url)
++}
++
++// RemoveVideo clears whichever video (uploaded or YouTube) is set.
++func (s *Service) RemoveVideo(lessonID int) error {
++	return s.repo.SetVideoURL(lessonID, "")
++}
++
++// RemovePDF clears the lesson's PDF url. The corresponding notes row
++// (title/description) is removed separately by the notes package.
++func (s *Service) RemovePDF(lessonID int) error {
++	return s.repo.SetPDFURL(lessonID, "")
++}
+diff --git a/backend/internal/notes/handler.go b/backend/internal/notes/handler.go
+index f53661e..520151a 100644
+--- a/backend/internal/notes/handler.go
++++ b/backend/internal/notes/handler.go
+@@ -1,6 +1,7 @@
+ package notes
+ 
+ import (
++	"errors"
+ 	"net/http"
+ 	"strconv"
+ 
+@@ -19,6 +20,18 @@ func NewHandler(service *Service) *Handler {
+ 	return &Handler{service: service}
+ }
+ 
++// requireTeacherOrAdmin mirrors lessons.requireTeacherOrAdmin - PDF
++// notes are managed from inside the Lesson page by the same roles that
++// manage the lesson itself.
++func requireTeacherOrAdmin(c *gin.Context) bool {
++	role := c.GetString("role")
++	if role != "admin" && role != "teacher" {
++		utils.RespondError(c, http.StatusForbidden, "Only teachers and admins can manage notes")
++		return false
++	}
++	return true
++}
++
+ // ListByLesson handles GET /api/lessons/:id/notes.
+ func (h *Handler) ListByLesson(c *gin.Context) {
+ 	lessonID, err := strconv.Atoi(c.Param("id"))
+@@ -34,13 +47,12 @@ func (h *Handler) ListByLesson(c *gin.Context) {
+ 	utils.RespondSuccess(c, http.StatusOK, "Notes fetched", list)
+ }
+ 
+-// Create handles POST /api/notes (admin-only).
++// Create handles POST /api/notes (teacher or admin).
+ //
+ // QA fix: previously had no role check - any authenticated user could
+ // create a note.
+ func (h *Handler) Create(c *gin.Context) {
+-	if c.GetString("role") != "admin" {
+-		utils.RespondError(c, http.StatusForbidden, "Only admins can create notes")
++	if !requireTeacherOrAdmin(c) {
+ 		return
+ 	}
+ 	var req CreateNoteRequest
+@@ -55,3 +67,53 @@ func (h *Handler) Create(c *gin.Context) {
+ 	}
+ 	utils.RespondSuccess(c, http.StatusCreated, "Note created", gin.H{"id": id})
+ }
++
++// --- Lesson Resource Management (additive) ---
++
++// Update handles PUT /api/notes/:id (teacher or admin) - "Replace PDF"
++// and editing PDF title/description.
++func (h *Handler) Update(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid note id")
++		return
++	}
++	var req UpdateNoteRequest
++	if err := c.ShouldBindJSON(&req); err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid request body")
++		return
++	}
++	if err := h.service.Update(id, req); err != nil {
++		if errors.Is(err, ErrNoteNotFound) {
++			utils.RespondError(c, http.StatusNotFound, "Note not found")
++			return
++		}
++		utils.RespondError(c, http.StatusBadRequest, err.Error())
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "Note updated", nil)
++}
++
++// Delete handles DELETE /api/notes/:id (teacher or admin) - "Remove PDF".
++func (h *Handler) Delete(c *gin.Context) {
++	if !requireTeacherOrAdmin(c) {
++		return
++	}
++	id, err := strconv.Atoi(c.Param("id"))
++	if err != nil {
++		utils.RespondError(c, http.StatusBadRequest, "Invalid note id")
++		return
++	}
++	if err := h.service.Delete(id); err != nil {
++		if errors.Is(err, ErrNoteNotFound) {
++			utils.RespondError(c, http.StatusNotFound, "Note not found")
++			return
++		}
++		utils.RespondError(c, http.StatusInternalServerError, "Failed to delete note")
++		return
++	}
++	utils.RespondSuccess(c, http.StatusOK, "Note deleted", nil)
++}
+diff --git a/backend/internal/notes/model.go b/backend/internal/notes/model.go
+index 32a618c..62f1c5f 100644
+--- a/backend/internal/notes/model.go
++++ b/backend/internal/notes/model.go
+@@ -5,16 +5,30 @@ import "time"
+ 
+ // Note mirrors the "notes" table row.
+ type Note struct {
+-	ID        int       `json:"id"`
+-	LessonID  int       `json:"lesson_id"`
+-	Title     string    `json:"title"`
+-	PDFURL    string    `json:"pdf_url"`
+-	CreatedAt time.Time `json:"created_at"`
++	ID          int       `json:"id"`
++	LessonID    int       `json:"lesson_id"`
++	Title       string    `json:"title"`
++	Description string    `json:"description"`
++	PDFURL      string    `json:"pdf_url"`
++	CreatedAt   time.Time `json:"created_at"`
+ }
+ 
+ // CreateNoteRequest is the expected JSON body for POST /api/notes.
+ type CreateNoteRequest struct {
+-	LessonID int    `json:"lesson_id" binding:"required"`
+-	Title    string `json:"title" binding:"required"`
+-	PDFURL   string `json:"pdf_url" binding:"required"`
++	LessonID    int    `json:"lesson_id" binding:"required"`
++	Title       string `json:"title" binding:"required"`
++	Description string `json:"description"`
++	PDFURL      string `json:"pdf_url" binding:"required"`
++}
++
++// --- Lesson Resource Management (additive) ---
++
++// UpdateNoteRequest - pointer fields mean "only update if present",
++// same convention as lessons.UpdateLessonRequest. Powers "Replace PDF"
++// (new pdf_url) and editing the PDF's title/description from the
++// Lesson page.
++type UpdateNoteRequest struct {
++	Title       *string `json:"title"`
++	Description *string `json:"description"`
++	PDFURL      *string `json:"pdf_url"`
+ }
+\ No newline at end of file
+diff --git a/backend/internal/notes/repository.go b/backend/internal/notes/repository.go
+index 92e8278..c093b01 100644
+--- a/backend/internal/notes/repository.go
++++ b/backend/internal/notes/repository.go
+@@ -1,6 +1,13 @@
+ package notes
+ 
+-import "database/sql"
++import (
++	"database/sql"
++	"errors"
++)
++
++// ErrNoteNotFound is returned when no note matches the given ID -
++// mirrors lessons.ErrLessonNotFound.
++var ErrNoteNotFound = errors.New("note not found")
+ 
+ // Repository handles direct SQL access for notes.
+ type Repository struct {
+@@ -14,7 +21,7 @@ func NewRepository(db *sql.DB) *Repository {
+ 
+ // FindByLessonID returns every note attached to a lesson.
+ func (r *Repository) FindByLessonID(lessonID int) ([]Note, error) {
+-	query := `SELECT id, lesson_id, title, pdf_url, created_at FROM notes WHERE lesson_id = $1 ORDER BY id`
++	query := `SELECT id, lesson_id, title, COALESCE(description, ''), pdf_url, created_at FROM notes WHERE lesson_id = $1 ORDER BY id`
+ 	rows, err := r.db.Query(query, lessonID)
+ 	if err != nil {
+ 		return nil, err
+@@ -24,7 +31,7 @@ func (r *Repository) FindByLessonID(lessonID int) ([]Note, error) {
+ 	var result []Note
+ 	for rows.Next() {
+ 		var n Note
+-		if err := rows.Scan(&n.ID, &n.LessonID, &n.Title, &n.PDFURL, &n.CreatedAt); err != nil {
++		if err := rows.Scan(&n.ID, &n.LessonID, &n.Title, &n.Description, &n.PDFURL, &n.CreatedAt); err != nil {
+ 			return nil, err
+ 		}
+ 		result = append(result, n)
+@@ -33,9 +40,45 @@ func (r *Repository) FindByLessonID(lessonID int) ([]Note, error) {
+ }
+ 
+ // Create inserts a new note and returns its generated ID.
+-func (r *Repository) Create(lessonID int, title, pdfURL string) (int, error) {
++func (r *Repository) Create(lessonID int, title, description, pdfURL string) (int, error) {
+ 	var id int
+-	query := `INSERT INTO notes (lesson_id, title, pdf_url) VALUES ($1, $2, $3) RETURNING id`
+-	err := r.db.QueryRow(query, lessonID, title, pdfURL).Scan(&id)
++	query := `INSERT INTO notes (lesson_id, title, description, pdf_url) VALUES ($1, $2, $3, $4) RETURNING id`
++	err := r.db.QueryRow(query, lessonID, title, description, pdfURL).Scan(&id)
+ 	return id, err
+-}
+\ No newline at end of file
++}
++
++// --- Lesson Resource Management (additive) ---
++
++// Update applies only the provided (non-nil) fields - same COALESCE
++// convention as lessons.Repository.Update.
++func (r *Repository) Update(id int, req UpdateNoteRequest) error {
++	res, err := r.db.Exec(`
++		UPDATE notes SET
++			title = COALESCE($1, title),
++			description = COALESCE($2, description),
++			pdf_url = COALESCE($3, pdf_url)
++		WHERE id = $4`,
++		req.Title, req.Description, req.PDFURL, id,
++	)
++	if err != nil {
++		return err
++	}
++	rows, _ := res.RowsAffected()
++	if rows == 0 {
++		return ErrNoteNotFound
++	}
++	return nil
++}
++
++// Delete removes a single note (the "Remove PDF" action).
++func (r *Repository) Delete(id int) error {
++	res, err := r.db.Exec(`DELETE FROM notes WHERE id = $1`, id)
++	if err != nil {
++		return err
++	}
++	rows, _ := res.RowsAffected()
++	if rows == 0 {
++		return ErrNoteNotFound
++	}
++	return nil
++}
+diff --git a/backend/internal/notes/routes.go b/backend/internal/notes/routes.go
+index c8714a2..d15778e 100644
+--- a/backend/internal/notes/routes.go
++++ b/backend/internal/notes/routes.go
+@@ -6,4 +6,8 @@ import "github.com/gin-gonic/gin"
+ func RegisterRoutes(router *gin.RouterGroup, handler *Handler, authMiddleware gin.HandlerFunc) {
+ 	router.POST("/notes", authMiddleware, handler.Create)
+ 	router.GET("/lessons/:id/notes", authMiddleware, handler.ListByLesson)
++	// Lesson Resource Management (additive) - teacher-or-admin gated
++	// inside the handler itself.
++	router.PUT("/notes/:id", authMiddleware, handler.Update)
++	router.DELETE("/notes/:id", authMiddleware, handler.Delete)
+ }
+\ No newline at end of file
+diff --git a/backend/internal/notes/service.go b/backend/internal/notes/service.go
+index 325c171..8c100d0 100644
+--- a/backend/internal/notes/service.go
++++ b/backend/internal/notes/service.go
+@@ -25,5 +25,20 @@ func (s *Service) Create(req CreateNoteRequest) (int, error) {
+ 	if req.LessonID <= 0 {
+ 		return 0, errors.New("a valid lesson_id is required")
+ 	}
+-	return s.repo.Create(req.LessonID, req.Title, req.PDFURL)
+-}
+\ No newline at end of file
++	return s.repo.Create(req.LessonID, req.Title, req.Description, req.PDFURL)
++}
++
++// --- Lesson Resource Management (additive) ---
++
++// Update validates and applies a partial update (title/description/pdf_url).
++func (s *Service) Update(id int, req UpdateNoteRequest) error {
++	if req.Title != nil && *req.Title == "" {
++		return errors.New("title cannot be empty")
++	}
++	return s.repo.Update(id, req)
++}
++
++// Delete removes a note - the "Remove PDF" action from the Lesson page.
++func (s *Service) Delete(id int) error {
++	return s.repo.Delete(id)
++}
+diff --git a/backend/migrations/027_lesson_resource_management.sql b/backend/migrations/027_lesson_resource_management.sql
+new file mode 100644
+index 0000000..85dfa54
+--- /dev/null
++++ b/backend/migrations/027_lesson_resource_management.sql
+@@ -0,0 +1,23 @@
++-- Lesson Resource Management workflow support.
++--
++-- Mirrors the exact pattern already used for subjects.status
++-- (see 025_add_course_management.sql): lessons need their own
++-- draft/published lifecycle, independent of the subject's.
++--
++-- Existing lessons default to 'published' so this migration does not
++-- change what students already see. New lessons created through the
++-- updated Create/Edit Lesson flow explicitly start as 'draft' at the
++-- application layer (see internal/lessons/repository.go Create()).
++--
++-- notes.description is additive metadata for the "PDF Notes" section
++-- of the Lesson page (Title + Description alongside the PDF itself);
++-- existing notes simply get an empty description.
++
++BEGIN;
++
++ALTER TABLE lessons ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'published';
++CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
++
++ALTER TABLE notes ADD COLUMN IF NOT EXISTS description TEXT;
++
++COMMIT;
+diff --git a/frontend/lib/core/constants/api_constants.dart b/frontend/lib/core/constants/api_constants.dart
+index 1d358ec..836a0f0 100644
+--- a/frontend/lib/core/constants/api_constants.dart
++++ b/frontend/lib/core/constants/api_constants.dart
+@@ -43,6 +43,14 @@ class ApiConstants {
+   static String lessonUploadVideo(int id) => '/lessons/$id/upload-video';
+   static String lessonUploadPdf(int id) => '/lessons/$id/upload-pdf';
+   static String lessonUploadAssignment(int id) => '/lessons/$id/upload-assignment';
++  // --- Lesson Resource Management (additive) ---
++  static String lessonPublish(int id) => '/lessons/$id/publish';
++  static String lessonUnpublish(int id) => '/lessons/$id/unpublish';
++  static String lessonYoutubeUrl(int id) => '/lessons/$id/youtube-url';
++  static String lessonRemoveVideo(int id) => '/lessons/$id/video';
++  static String lessonRemovePdf(int id) => '/lessons/$id/pdf';
++  static String noteUpdate(int id) => '/notes/$id';
++  static String noteDelete(int id) => '/notes/$id';
+   static const String teacherApply = '/auth/teacher/apply';
+   static const String login = '/auth/login';
+   static const String profile = '/auth/profile';
+diff --git a/frontend/lib/models/course_model.dart b/frontend/lib/models/course_model.dart
+index 932bcad..96a170c 100644
+--- a/frontend/lib/models/course_model.dart
++++ b/frontend/lib/models/course_model.dart
+@@ -49,6 +49,7 @@ class AdminLessonModel {
+   final String assignmentUrl;
+   final int duration;
+   final int orderNumber;
++  final String status; // "draft" or "published"
+ 
+   AdminLessonModel({
+     required this.id,
+@@ -60,6 +61,7 @@ class AdminLessonModel {
+     required this.assignmentUrl,
+     required this.duration,
+     required this.orderNumber,
++    this.status = 'published',
+   });
+ 
+   factory AdminLessonModel.fromJson(Map<String, dynamic> json) {
+@@ -73,6 +75,9 @@ class AdminLessonModel {
+       assignmentUrl: json['assignment_url'] as String? ?? '',
+       duration: json['duration'] as int? ?? 0,
+       orderNumber: json['order_number'] as int? ?? 0,
++      status: json['status'] as String? ?? 'published',
+     );
+   }
++
++  bool get isPublished => status == 'published';
+ }
+diff --git a/frontend/lib/models/lesson_model.dart b/frontend/lib/models/lesson_model.dart
+index dcaccb2..0e36512 100644
+--- a/frontend/lib/models/lesson_model.dart
++++ b/frontend/lib/models/lesson_model.dart
+@@ -9,8 +9,9 @@ class LessonModel {
+   final String thumbnailUrl;
+   final int duration; // minutes
+   final int orderNumber;
++  final String status; // "draft" or "published"
+ 
+-  /// Not part of the API response Ã¢â‚¬â€ set locally by the UI once a lesson
++  /// Not part of the API response - set locally by the UI once a lesson
+   /// has been marked complete via the backend, so LessonsScreen can show a
+   /// checkmark (see LessonProvider.loadLessons, which merges in real
+   /// persisted completion from GET /api/progress/subjects/:id).
+@@ -26,6 +27,7 @@ class LessonModel {
+     required this.thumbnailUrl,
+     required this.duration,
+     required this.orderNumber,
++    this.status = 'published',
+     this.isCompleted = false,
+   });
+ 
+@@ -40,6 +42,7 @@ class LessonModel {
+       thumbnailUrl: json['thumbnail_url'] as String? ?? '',
+       duration: json['duration'] as int? ?? 0,
+       orderNumber: json['order_number'] as int? ?? 0,
++      status: json['status'] as String? ?? 'published',
+     );
+   }
+ }
+diff --git a/frontend/lib/models/note_model.dart b/frontend/lib/models/note_model.dart
+index f4b33a3..28c2e1e 100644
+--- a/frontend/lib/models/note_model.dart
++++ b/frontend/lib/models/note_model.dart
+@@ -3,12 +3,14 @@ class NoteModel {
+   final int id;
+   final int lessonId;
+   final String title;
++  final String description;
+   final String pdfUrl;
+ 
+   NoteModel({
+     required this.id,
+     required this.lessonId,
+     required this.title,
++    this.description = '',
+     required this.pdfUrl,
+   });
+ 
+@@ -17,6 +19,7 @@ class NoteModel {
+       id: json['id'] as int? ?? 0,
+       lessonId: json['lesson_id'] as int? ?? 0,
+       title: json['title'] as String? ?? '',
++      description: json['description'] as String? ?? '',
+       pdfUrl: json['pdf_url'] as String? ?? '',
+     );
+   }
+diff --git a/frontend/lib/screens/courses/lesson_management_screen.dart b/frontend/lib/screens/courses/lesson_management_screen.dart
+index 1b32442..5c80ddf 100644
+--- a/frontend/lib/screens/courses/lesson_management_screen.dart
++++ b/frontend/lib/screens/courses/lesson_management_screen.dart
+@@ -1,13 +1,36 @@
+ import 'dart:io';
+ import 'package:file_picker/file_picker.dart';
+ import 'package:flutter/material.dart';
++import 'package:go_router/go_router.dart';
++import 'package:url_launcher/url_launcher.dart';
++import '../../core/constants/api_constants.dart';
+ import '../../core/theme/app_colors.dart';
+ import '../../models/course_model.dart';
++import '../../models/note_model.dart';
+ import '../../services/course_service.dart';
+ 
+-/// Admin-only: manage a course's lessons - create, edit, delete, drag-
+-/// and-drop reorder, and upload video/PDF/assignment files (via
+-/// Cloudinary, same pattern as Class Resources uploads elsewhere).
++/// Extracts a YouTube video ID from the common URL shapes teachers might
++/// paste in (watch?v=, youtu.be/, embed/). Returns null if the URL
++/// doesn't look like YouTube - used only for building a thumbnail
++/// preview, never for playback (playback opens externally).
++String? _youtubeVideoId(String url) {
++  final trimmed = url.trim();
++  final patterns = [
++    RegExp(r'(?:youtube\.com/watch\?v=|youtube\.com/shorts/|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{6,})'),
++  ];
++  for (final p in patterns) {
++    final match = p.firstMatch(trimmed);
++    if (match != null) return match.group(1);
++  }
++  return null;
++}
++
++bool _looksLikeYouTube(String url) => _youtubeVideoId(url) != null;
++
++/// Admin/Teacher: manage a course's lessons - create, edit, delete, drag-
++/// and-drop reorder, and (per lesson) manage every learning resource -
++/// video (upload or YouTube), PDF notes (title + description), and the
++/// draft/published state - from a single Lesson page.
+ class LessonManagementScreen extends StatefulWidget {
+   final int courseId;
+   final String courseName;
+@@ -55,62 +78,18 @@ class _LessonManagementScreenState extends State<LessonManagementScreen> {
+     }
+   }
+ 
+-  Future<void> _showLessonDialog({AdminLessonModel? existing}) async {
+-    final titleController = TextEditingController(text: existing?.title ?? '');
+-    final descController = TextEditingController(text: existing?.description ?? '');
+-    final durationController = TextEditingController(text: existing != null ? existing.duration.toString() : '');
+-
+-    try {
+-      final saved = await showDialog<bool>(
+-        context: context,
+-        builder: (context) => AlertDialog(
+-          title: Text(existing == null ? 'New Lesson' : 'Edit Lesson'),
+-          content: SingleChildScrollView(
+-            child: Column(
+-              mainAxisSize: MainAxisSize.min,
+-              children: [
+-                TextField(controller: titleController, autofocus: true, decoration: const InputDecoration(labelText: 'Title *')),
+-                const SizedBox(height: 12),
+-                TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
+-                const SizedBox(height: 12),
+-                TextField(controller: durationController, decoration: const InputDecoration(labelText: 'Duration (minutes)'), keyboardType: TextInputType.number),
+-              ],
+-            ),
+-          ),
+-          actions: [
+-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+-            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+-          ],
++  Future<void> _openEditor({AdminLessonModel? existing}) async {
++    final changed = await Navigator.push<bool>(
++      context,
++      MaterialPageRoute(
++        builder: (_) => _LessonEditorScreen(
++          subjectId: widget.courseId,
++          existing: existing,
++          nextOrderNumber: _lessons.length,
+         ),
+-      );
+-      if (saved != true) return;
+-      if (titleController.text.trim().isEmpty) {
+-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Title is required.')));
+-        return;
+-      }
+-
+-      try {
+-        final duration = int.tryParse(durationController.text.trim()) ?? 0;
+-        if (existing == null) {
+-          await _service.createLesson(
+-            subjectId: widget.courseId,
+-            title: titleController.text.trim(),
+-            description: descController.text.trim(),
+-            duration: duration,
+-            orderNumber: _lessons.length,
+-          );
+-        } else {
+-          await _service.updateLesson(existing.id, title: titleController.text.trim(), description: descController.text.trim(), duration: duration);
+-        }
+-        _load();
+-      } catch (e) {
+-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save lesson.')));
+-      }
+-    } finally {
+-      titleController.dispose();
+-      descController.dispose();
+-      durationController.dispose();
+-    }
++      ),
++    );
++    if (changed == true) _load();
+   }
+ 
+   Future<void> _confirmDeleteLesson(AdminLessonModel lesson) async {
+@@ -134,41 +113,12 @@ class _LessonManagementScreenState extends State<LessonManagementScreen> {
+     }
+   }
+ 
+-  Future<void> _uploadFile(AdminLessonModel lesson, String kind) async {
+-    final extensions = kind == 'video' ? ['mp4', 'mov'] : ['pdf'];
+-    final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: extensions);
+-    if (result == null || result.files.single.path == null) return;
+-
+-    final file = File(result.files.single.path!);
+-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploading ${kind}...'), duration: const Duration(seconds: 30)));
+-
+-    try {
+-      if (kind == 'video') {
+-        await _service.uploadLessonVideo(lesson.id, file);
+-      } else if (kind == 'pdf') {
+-        await _service.uploadLessonPdf(lesson.id, file);
+-      } else {
+-        await _service.uploadLessonAssignment(lesson.id, file);
+-      }
+-      if (mounted) {
+-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload complete.')));
+-      }
+-      _load();
+-    } catch (e) {
+-      if (mounted) {
+-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed. Please try again.')));
+-      }
+-    }
+-  }
+-
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: Text('Lessons - ${widget.courseName}')),
+       floatingActionButton: FloatingActionButton(
+-        onPressed: () => _showLessonDialog(),
++        onPressed: () => _openEditor(),
+         backgroundColor: AppColors.purple,
+         child: const Icon(Icons.add, color: Colors.white),
+       ),
+@@ -185,48 +135,31 @@ class _LessonManagementScreenState extends State<LessonManagementScreen> {
+                     return Card(
+                       key: ValueKey(lesson.id),
+                       margin: const EdgeInsets.only(bottom: 10),
+-                      child: ExpansionTile(
++                      child: ListTile(
++                        onTap: () => _openEditor(existing: lesson),
+                         leading: CircleAvatar(backgroundColor: AppColors.purpleLight, child: Text('${index + 1}', style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.w700))),
+                         title: Text(lesson.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+-                        subtitle: Text(lesson.duration > 0 ? '${lesson.duration} min' : 'No duration set', style: const TextStyle(fontSize: 12)),
+-                        trailing: ReorderableDragStartListener(
+-                          index: index,
+-                          child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.drag_handle_rounded, color: AppColors.textSecondary)),
++                        subtitle: Row(
++                          children: [
++                            _statusChip(lesson.isPublished),
++                            const SizedBox(width: 8),
++                            Text(lesson.duration > 0 ? '${lesson.duration} min' : 'No duration set', style: const TextStyle(fontSize: 12)),
++                          ],
+                         ),
+-                        children: [
+-                          Padding(
+-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+-                            child: Column(
+-                              crossAxisAlignment: CrossAxisAlignment.start,
+-                              children: [
+-                                Wrap(
+-                                  spacing: 8,
+-                                  runSpacing: 8,
+-                                  children: [
+-                                    _actionChip(Icons.videocam_outlined, lesson.videoUrl.isNotEmpty ? 'Video ✓' : 'Upload Video', () => _uploadFile(lesson, 'video')),
+-                                    _actionChip(Icons.picture_as_pdf_outlined, lesson.pdfUrl.isNotEmpty ? 'PDF ✓' : 'Upload PDF', () => _uploadFile(lesson, 'pdf')),
+-                                    _actionChip(Icons.assignment_outlined, lesson.assignmentUrl.isNotEmpty ? 'Assignment ✓' : 'Upload Assignment', () => _uploadFile(lesson, 'assignment')),
+-                                  ],
+-                                ),
+-                                const SizedBox(height: 12),
+-                                Row(
+-                                  children: [
+-                                    TextButton.icon(
+-                                      onPressed: () => _showLessonDialog(existing: lesson),
+-                                      icon: const Icon(Icons.edit_outlined, size: 18),
+-                                      label: const Text('Edit'),
+-                                    ),
+-                                    TextButton.icon(
+-                                      onPressed: () => _confirmDeleteLesson(lesson),
+-                                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+-                                      label: const Text('Delete', style: TextStyle(color: Colors.red)),
+-                                    ),
+-                                  ],
+-                                ),
+-                              ],
++                        trailing: Row(
++                          mainAxisSize: MainAxisSize.min,
++                          children: [
++                            IconButton(
++                              tooltip: 'Delete',
++                              icon: const Icon(Icons.delete_outline, color: Colors.red),
++                              onPressed: () => _confirmDeleteLesson(lesson),
+                             ),
+-                          ),
+-                        ],
++                            ReorderableDragStartListener(
++                              index: index,
++                              child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.drag_handle_rounded, color: AppColors.textSecondary)),
++                            ),
++                          ],
++                        ),
+                       ),
+                     );
+                   },
+@@ -234,11 +167,733 @@ class _LessonManagementScreenState extends State<LessonManagementScreen> {
+     );
+   }
+ 
+-  Widget _actionChip(IconData icon, String label, VoidCallback onTap) {
+-    return ActionChip(
+-      avatar: Icon(icon, size: 16, color: AppColors.purple),
+-      label: Text(label, style: const TextStyle(fontSize: 12)),
+-      onPressed: onTap,
++  Widget _statusChip(bool isPublished) {
++    final color = isPublished ? AppColors.green : AppColors.textSecondary;
++    final label = isPublished ? 'Published' : 'Draft';
++    return Container(
++      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
++      decoration: BoxDecoration(
++        color: color.withOpacity(0.12),
++        borderRadius: BorderRadius.circular(20),
++        border: Border.all(color: color.withOpacity(0.4)),
++      ),
++      child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
++    );
++  }
++}
++
++/// The Create/Edit Lesson page - everything the teacher needs for one
++/// lesson lives here: Lesson Info, Video, PDF Notes, and Publish/Draft.
++class _LessonEditorScreen extends StatefulWidget {
++  final int subjectId;
++  final AdminLessonModel? existing;
++  final int nextOrderNumber;
++
++  const _LessonEditorScreen({required this.subjectId, this.existing, required this.nextOrderNumber});
++
++  @override
++  State<_LessonEditorScreen> createState() => _LessonEditorScreenState();
++}
++
++class _LessonEditorScreenState extends State<_LessonEditorScreen> {
++  final CourseService _service = CourseService();
++  final _formKey = GlobalKey<FormState>();
++
++  late final TextEditingController _titleController;
++  late final TextEditingController _descController;
++  late final TextEditingController _durationController;
++  final _youtubeController = TextEditingController();
++  final _pdfTitleController = TextEditingController();
++  final _pdfDescController = TextEditingController();
++
++  AdminLessonModel? _lesson; // becomes non-null once the lesson is saved at least once
++  NoteModel? _note; // the lesson's single PDF note, if any
++  bool _savingInfo = false;
++  bool _busyVideo = false;
++  bool _busyPdf = false;
++  bool _busyStatus = false;
++  bool _showYoutubeField = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _lesson = widget.existing;
++    _titleController = TextEditingController(text: _lesson?.title ?? '');
++    _descController = TextEditingController(text: _lesson?.description ?? '');
++    _durationController = TextEditingController(text: _lesson != null ? _lesson!.duration.toString() : '');
++    if (_lesson != null) _loadNote();
++  }
++
++  @override
++  void dispose() {
++    _titleController.dispose();
++    _descController.dispose();
++    _durationController.dispose();
++    _youtubeController.dispose();
++    _pdfTitleController.dispose();
++    _pdfDescController.dispose();
++    super.dispose();
++  }
++
++  Future<void> _loadNote() async {
++    if (_lesson == null) return;
++    try {
++      final notes = await _service.listLessonNotes(_lesson!.id);
++      if (notes.isNotEmpty && mounted) {
++        setState(() {
++          _note = notes.first;
++          _pdfTitleController.text = _note!.title;
++          _pdfDescController.text = _note!.description;
++        });
++      }
++    } catch (_) {
++      // best-effort - PDF section still works without prefilled metadata
++    }
++  }
++
++  void _snack(String message) {
++    if (!mounted) return;
++    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
++  }
++
++  Future<void> _refreshLesson() async {
++    if (_lesson == null) return;
++    try {
++      final fresh = await _service.listLessons(widget.subjectId);
++      final match = fresh.where((l) => l.id == _lesson!.id).toList();
++      if (match.isNotEmpty && mounted) setState(() => _lesson = match.first);
++    } catch (_) {}
++  }
++
++  /// Saves Lesson Information (Title + Description + Duration). Creates
++  /// the lesson on first save (it starts as a draft with no resources -
++  /// "Allow Draft without resources"), or updates it thereafter.
++  Future<bool> _saveInfo() async {
++    if (!_formKey.currentState!.validate()) return false;
++    setState(() => _savingInfo = true);
++    try {
++      final duration = int.tryParse(_durationController.text.trim()) ?? 0;
++      if (_lesson == null) {
++        final id = await _service.createLesson(
++          subjectId: widget.subjectId,
++          title: _titleController.text.trim(),
++          description: _descController.text.trim(),
++          duration: duration,
++          orderNumber: widget.nextOrderNumber,
++        );
++        setState(() {
++          _lesson = AdminLessonModel(
++            id: id,
++            subjectId: widget.subjectId,
++            title: _titleController.text.trim(),
++            description: _descController.text.trim(),
++            videoUrl: '',
++            pdfUrl: '',
++            assignmentUrl: '',
++            duration: duration,
++            orderNumber: widget.nextOrderNumber,
++            status: 'draft',
++          );
++        });
++      } else {
++        await _service.updateLesson(_lesson!.id, title: _titleController.text.trim(), description: _descController.text.trim(), duration: duration);
++        await _refreshLesson();
++      }
++      return true;
++    } catch (e) {
++      _snack('Failed to save lesson. Please try again.');
++      return false;
++    } finally {
++      if (mounted) setState(() => _savingInfo = false);
++    }
++  }
++
++  // --- Video ---
++
++  Future<void> _uploadVideoFile() async {
++    final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['mp4', 'mov']);
++    if (result == null || result.files.single.path == null) return;
++    if (!await _ensureLessonSaved()) return;
++
++    setState(() => _busyVideo = true);
++    final file = File(result.files.single.path!);
++    try {
++      await _service.uploadLessonVideo(_lesson!.id, file);
++      await _refreshLesson();
++      _snack('Video uploaded.');
++    } catch (e) {
++      _snack('Video upload failed. Please try again.');
++    } finally {
++      if (mounted) setState(() => _busyVideo = false);
++    }
++  }
++
++  Future<void> _saveYoutubeUrl() async {
++    final url = _youtubeController.text.trim();
++    if (url.isEmpty || !_looksLikeYouTube(url)) {
++      _snack('Enter a valid YouTube URL.');
++      return;
++    }
++    if (!await _ensureLessonSaved()) return;
++
++    setState(() => _busyVideo = true);
++    try {
++      await _service.setLessonYoutubeUrl(_lesson!.id, url);
++      await _refreshLesson();
++      setState(() {
++        _showYoutubeField = false;
++        _youtubeController.clear();
++      });
++      _snack('YouTube video linked.');
++    } catch (e) {
++      _snack('Could not save that YouTube URL.');
++    } finally {
++      if (mounted) setState(() => _busyVideo = false);
++    }
++  }
++
++  Future<void> _removeVideo() async {
++    if (_lesson == null) return;
++    final confirmed = await _confirm('Remove Video?', 'This lesson\'s video will be removed.');
++    if (!confirmed) return;
++    setState(() => _busyVideo = true);
++    try {
++      await _service.removeLessonVideo(_lesson!.id);
++      await _refreshLesson();
++    } catch (e) {
++      _snack('Failed to remove video.');
++    } finally {
++      if (mounted) setState(() => _busyVideo = false);
++    }
++  }
++
++  void _previewVideo() async {
++    if (_lesson == null || _lesson!.videoUrl.isEmpty) return;
++    final uri = Uri.tryParse(ApiConstants.resolveMediaUrl(_lesson!.videoUrl));
++    if (uri == null) return;
++    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
++      _snack('Could not open the video.');
++    }
++  }
++
++  // --- PDF ---
++
++  Future<void> _uploadPdfFile() async {
++    final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
++    if (result == null || result.files.single.path == null) return;
++
++    // PDF Title is required metadata for the note - ask for it up front
++    // if this is the first PDF (no existing note to reuse a title from).
++    String title = _pdfTitleController.text.trim();
++    String description = _pdfDescController.text.trim();
++    if (title.isEmpty) {
++      final entered = await _promptPdfMeta();
++      if (entered == null) return; // cancelled
++      title = entered['title']!;
++      description = entered['description']!;
++    }
++    if (!await _ensureLessonSaved()) return;
++
++    setState(() => _busyPdf = true);
++    final file = File(result.files.single.path!);
++    try {
++      final pdfUrl = await _service.uploadLessonPdf(_lesson!.id, file);
++      if (_note == null) {
++        final id = await _service.createLessonNote(lessonId: _lesson!.id, title: title, description: description, pdfUrl: pdfUrl);
++        setState(() => _note = NoteModel(id: id, lessonId: _lesson!.id, title: title, description: description, pdfUrl: pdfUrl));
++      } else {
++        await _service.updateLessonNote(_note!.id, title: title, description: description, pdfUrl: pdfUrl);
++        setState(() => _note = NoteModel(id: _note!.id, lessonId: _lesson!.id, title: title, description: description, pdfUrl: pdfUrl));
++      }
++      _pdfTitleController.text = title;
++      _pdfDescController.text = description;
++      await _refreshLesson();
++      _snack('PDF uploaded.');
++    } catch (e) {
++      _snack('PDF upload failed. Please try again.');
++    } finally {
++      if (mounted) setState(() => _busyPdf = false);
++    }
++  }
++
++  Future<Map<String, String>?> _promptPdfMeta() async {
++    final titleCtrl = TextEditingController(text: _pdfTitleController.text);
++    final descCtrl = TextEditingController(text: _pdfDescController.text);
++    try {
++      final ok = await showDialog<bool>(
++        context: context,
++        builder: (context) => AlertDialog(
++          title: const Text('PDF Details'),
++          content: Column(
++            mainAxisSize: MainAxisSize.min,
++            children: [
++              TextField(controller: titleCtrl, autofocus: true, decoration: const InputDecoration(labelText: 'PDF Title *')),
++              const SizedBox(height: 12),
++              TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'PDF Description'), maxLines: 2),
++            ],
++          ),
++          actions: [
++            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
++            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue')),
++          ],
++        ),
++      );
++      if (ok != true) return null;
++      if (titleCtrl.text.trim().isEmpty) {
++        _snack('PDF Title is required.');
++        return null;
++      }
++      return {'title': titleCtrl.text.trim(), 'description': descCtrl.text.trim()};
++    } finally {
++      titleCtrl.dispose();
++      descCtrl.dispose();
++    }
++  }
++
++  Future<void> _saveNoteMeta() async {
++    if (_note == null) return;
++    final title = _pdfTitleController.text.trim();
++    if (title.isEmpty) {
++      _snack('PDF Title is required.');
++      return;
++    }
++    setState(() => _busyPdf = true);
++    try {
++      await _service.updateLessonNote(_note!.id, title: title, description: _pdfDescController.text.trim());
++      setState(() => _note = NoteModel(id: _note!.id, lessonId: _note!.lessonId, title: title, description: _pdfDescController.text.trim(), pdfUrl: _note!.pdfUrl));
++      _snack('PDF details saved.');
++    } catch (e) {
++      _snack('Failed to save PDF details.');
++    } finally {
++      if (mounted) setState(() => _busyPdf = false);
++    }
++  }
++
++  Future<void> _removePdf() async {
++    if (_lesson == null) return;
++    final confirmed = await _confirm('Remove PDF?', 'This lesson\'s PDF will be removed.');
++    if (!confirmed) return;
++    setState(() => _busyPdf = true);
++    try {
++      await _service.removeLessonPdf(_lesson!.id);
++      if (_note != null) await _service.deleteLessonNote(_note!.id);
++      setState(() {
++        _note = null;
++        _pdfTitleController.clear();
++        _pdfDescController.clear();
++      });
++      await _refreshLesson();
++    } catch (e) {
++      _snack('Failed to remove PDF.');
++    } finally {
++      if (mounted) setState(() => _busyPdf = false);
++    }
++  }
++
++  void _previewPdf() {
++    if (_lesson == null || _lesson!.pdfUrl.isEmpty) return;
++    context.push('/pdf-viewer', extra: {'url': ApiConstants.resolveMediaUrl(_lesson!.pdfUrl), 'title': _note?.title ?? _lesson!.title});
++  }
++
++  // --- Publish / Draft ---
++
++  Future<void> _publish() async {
++    if (!await _ensureLessonSaved()) return;
++    setState(() => _busyStatus = true);
++    try {
++      await _service.publishLesson(_lesson!.id);
++      await _refreshLesson();
++      _snack('Lesson published.');
++    } catch (e) {
++      // Server enforces "at least one video or PDF resource is required
++      // before publishing" (409) - this message covers that and any
++      // other failure without duplicating the check client-side.
++      _snack('At least one video or PDF resource is required before publishing.');
++    } finally {
++      if (mounted) setState(() => _busyStatus = false);
++    }
++  }
++
++  Future<void> _saveDraft() async {
++    final savedInfo = await _saveInfo();
++    if (!savedInfo || _lesson == null) return;
++    if (_lesson!.isPublished) {
++      setState(() => _busyStatus = true);
++      try {
++        await _service.unpublishLesson(_lesson!.id);
++        await _refreshLesson();
++      } catch (e) {
++        _snack('Failed to save as draft.');
++      } finally {
++        if (mounted) setState(() => _busyStatus = false);
++      }
++    }
++    _snack('Saved as draft.');
++  }
++
++  Future<bool> _ensureLessonSaved() async {
++    if (_lesson != null) return true;
++    final ok = await _saveInfo();
++    if (!ok) _snack('Please save the Lesson Title first.');
++    return ok && _lesson != null;
++  }
++
++  Future<bool> _confirm(String title, String message) async {
++    final result = await showDialog<bool>(
++      context: context,
++      builder: (context) => AlertDialog(
++        title: Text(title),
++        content: Text(message),
++        actions: [
++          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
++          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove', style: TextStyle(color: Colors.red))),
++        ],
++      ),
++    );
++    return result == true;
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final isNew = _lesson == null;
++    return Scaffold(
++      backgroundColor: AppColors.pageBackground,
++      appBar: AppBar(
++        title: Text(isNew ? 'New Lesson' : 'Edit Lesson'),
++        actions: [
++          if (_lesson != null)
++            Padding(
++              padding: const EdgeInsets.only(right: 16),
++              child: Center(child: _statusChip(_lesson!.isPublished)),
++            ),
++        ],
++      ),
++      body: WillPopScope(
++        onWillPop: () async {
++          Navigator.pop(context, _lesson != null);
++          return false;
++        },
++        child: SingleChildScrollView(
++          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              _sectionCard(
++                title: '1. Lesson Information',
++                icon: Icons.info_outline_rounded,
++                child: Form(
++                  key: _formKey,
++                  child: Column(
++                    children: [
++                      TextFormField(
++                        controller: _titleController,
++                        decoration: const InputDecoration(labelText: 'Lesson Title *', border: OutlineInputBorder()),
++                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Lesson Title is required' : null,
++                      ),
++                      const SizedBox(height: 12),
++                      TextFormField(
++                        controller: _descController,
++                        decoration: const InputDecoration(labelText: 'Lesson Description (optional)', border: OutlineInputBorder()),
++                        maxLines: 3,
++                      ),
++                      const SizedBox(height: 12),
++                      TextFormField(
++                        controller: _durationController,
++                        decoration: const InputDecoration(labelText: 'Duration (minutes)', border: OutlineInputBorder()),
++                        keyboardType: TextInputType.number,
++                      ),
++                      const SizedBox(height: 12),
++                      Align(
++                        alignment: Alignment.centerRight,
++                        child: FilledButton.icon(
++                          onPressed: _savingInfo ? null : () => _saveInfo(),
++                          icon: _savingInfo
++                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
++                              : const Icon(Icons.save_outlined, size: 18),
++                          label: Text(isNew ? 'Save Lesson' : 'Save Changes'),
++                        ),
++                      ),
++                    ],
++                  ),
++                ),
++              ),
++              const SizedBox(height: 16),
++              if (_lesson == null)
++                const Padding(
++                  padding: EdgeInsets.symmetric(vertical: 24),
++                  child: Center(
++                    child: Text(
++                      'Save the lesson title above to unlock Video, PDF Notes, and Publishing.',
++                      textAlign: TextAlign.center,
++                      style: TextStyle(color: AppColors.textSecondary),
++                    ),
++                  ),
++                )
++              else ...[
++                _buildVideoSection(),
++                const SizedBox(height: 16),
++                _buildPdfSection(),
++                const SizedBox(height: 16),
++                _buildLearningContentSection(),
++              ],
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++
++  Widget _sectionCard({required String title, required IconData icon, required Widget child}) {
++    return Card(
++      elevation: 0,
++      color: AppColors.card,
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE3E5EC))),
++      child: Padding(
++        padding: const EdgeInsets.all(16),
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            Row(
++              children: [
++                Icon(icon, size: 18, color: AppColors.purple),
++                const SizedBox(width: 8),
++                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
++              ],
++            ),
++            const SizedBox(height: 14),
++            child,
++          ],
++        ),
++      ),
++    );
++  }
++
++  Widget _statusChip(bool isPublished) {
++    final color = isPublished ? AppColors.green : AppColors.textSecondary;
++    final label = isPublished ? 'Published' : 'Draft';
++    return Container(
++      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
++      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.4))),
++      child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
++    );
++  }
++
++  Widget _buildVideoSection() {
++    final hasVideo = _lesson!.videoUrl.isNotEmpty;
++    final isYoutube = hasVideo && _looksLikeYouTube(_lesson!.videoUrl);
++
++    return _sectionCard(
++      title: '2. Video',
++      icon: Icons.videocam_outlined,
++      child: _busyVideo
++          ? const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
++          : hasVideo
++              ? _videoPreview(isYoutube)
++              : _videoEmptyState(),
++    );
++  }
++
++  Widget _videoPreview(bool isYoutube) {
++    final videoId = isYoutube ? _youtubeVideoId(_lesson!.videoUrl) : null;
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        ClipRRect(
++          borderRadius: BorderRadius.circular(12),
++          child: AspectRatio(
++            aspectRatio: 16 / 9,
++            child: Container(
++              color: Colors.black12,
++              child: Stack(
++                alignment: Alignment.center,
++                children: [
++                  if (videoId != null)
++                    Image.network('https://img.youtube.com/vi/$videoId/hqdefault.jpg', fit: BoxFit.cover, width: double.infinity, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
++                  Container(color: Colors.black.withOpacity(0.15)),
++                  const Icon(Icons.play_circle_fill_rounded, size: 56, color: Colors.white),
++                ],
++              ),
++            ),
++          ),
++        ),
++        const SizedBox(height: 6),
++        Text(isYoutube ? 'YouTube video linked' : 'Video uploaded', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
++        const SizedBox(height: 10),
++        Wrap(
++          spacing: 8,
++          runSpacing: 8,
++          children: [
++            OutlinedButton.icon(onPressed: _previewVideo, icon: const Icon(Icons.play_arrow_rounded, size: 18), label: const Text('Preview')),
++            OutlinedButton.icon(onPressed: _uploadVideoFile, icon: const Icon(Icons.upload_file_rounded, size: 18), label: const Text('Replace (Upload)')),
++            OutlinedButton.icon(
++              onPressed: () => setState(() => _showYoutubeField = !_showYoutubeField),
++              icon: const Icon(Icons.link_rounded, size: 18),
++              label: const Text('Replace (YouTube)'),
++            ),
++            OutlinedButton.icon(
++              onPressed: _removeVideo,
++              style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
++              icon: const Icon(Icons.delete_outline_rounded, size: 18),
++              label: const Text('Remove'),
++            ),
++          ],
++        ),
++        if (_showYoutubeField) _youtubeInputRow(),
++      ],
++    );
++  }
++
++  Widget _videoEmptyState() {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        const Text('No video added yet.', style: TextStyle(color: AppColors.textSecondary)),
++        const SizedBox(height: 10),
++        Wrap(
++          spacing: 8,
++          runSpacing: 8,
++          children: [
++            FilledButton.icon(onPressed: _uploadVideoFile, icon: const Icon(Icons.upload_file_rounded, size: 18), label: const Text('Upload Video')),
++            OutlinedButton.icon(
++              onPressed: () => setState(() => _showYoutubeField = !_showYoutubeField),
++              icon: const Icon(Icons.link_rounded, size: 18),
++              label: const Text('Add YouTube URL'),
++            ),
++          ],
++        ),
++        if (_showYoutubeField) _youtubeInputRow(),
++      ],
++    );
++  }
++
++  Widget _youtubeInputRow() {
++    return Padding(
++      padding: const EdgeInsets.only(top: 12),
++      child: Row(
++        children: [
++          Expanded(
++            child: TextField(
++              controller: _youtubeController,
++              decoration: const InputDecoration(labelText: 'YouTube URL', border: OutlineInputBorder(), isDense: true),
++            ),
++          ),
++          const SizedBox(width: 8),
++          FilledButton(onPressed: _saveYoutubeUrl, child: const Text('Save')),
++        ],
++      ),
++    );
++  }
++
++  Widget _buildPdfSection() {
++    final hasPdf = _lesson!.pdfUrl.isNotEmpty;
++    return _sectionCard(
++      title: '3. PDF Notes',
++      icon: Icons.picture_as_pdf_outlined,
++      child: _busyPdf
++          ? const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
++          : Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                if (!hasPdf) const Text('No PDF added yet.', style: TextStyle(color: AppColors.textSecondary)),
++                if (hasPdf) ...[
++                  TextField(
++                    controller: _pdfTitleController,
++                    decoration: const InputDecoration(labelText: 'PDF Title *', border: OutlineInputBorder(), isDense: true),
++                  ),
++                  const SizedBox(height: 10),
++                  TextField(
++                    controller: _pdfDescController,
++                    decoration: const InputDecoration(labelText: 'PDF Description', border: OutlineInputBorder(), isDense: true),
++                    maxLines: 2,
++                  ),
++                  const SizedBox(height: 10),
++                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: _saveNoteMeta, child: const Text('Save PDF Details'))),
++                ],
++                const SizedBox(height: 6),
++                Wrap(
++                  spacing: 8,
++                  runSpacing: 8,
++                  children: [
++                    if (!hasPdf)
++                      FilledButton.icon(onPressed: _uploadPdfFile, icon: const Icon(Icons.upload_file_rounded, size: 18), label: const Text('Upload PDF')),
++                    if (hasPdf) ...[
++                      OutlinedButton.icon(onPressed: _previewPdf, icon: const Icon(Icons.visibility_outlined, size: 18), label: const Text('Preview')),
++                      OutlinedButton.icon(onPressed: _uploadPdfFile, icon: const Icon(Icons.upload_file_rounded, size: 18), label: const Text('Replace')),
++                      OutlinedButton.icon(
++                        onPressed: _removePdf,
++                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
++                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
++                        label: const Text('Remove'),
++                      ),
++                    ],
++                  ],
++                ),
++              ],
++            ),
++    );
++  }
++
++  Widget _buildLearningContentSection() {
++    final hasResource = _lesson!.videoUrl.isNotEmpty || _lesson!.pdfUrl.isNotEmpty;
++    return _sectionCard(
++      title: '4. Learning Content',
++      icon: Icons.school_outlined,
++      child: _busyStatus
++          ? const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
++          : Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Text(
++                  _lesson!.isPublished
++                      ? 'This lesson is live - students can see it.'
++                      : hasResource
++                          ? 'This lesson is a draft and hidden from students.'
++                          : 'Add a video or PDF above before publishing. Drafts can be saved without any resource.',
++                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
++                ),
++                const SizedBox(height: 12),
++                Row(
++                  children: [
++                    Expanded(
++                      child: OutlinedButton.icon(
++                        onPressed: _saveDraft,
++                        icon: const Icon(Icons.drafts_outlined, size: 18),
++                        label: const Text('Save Draft'),
++                      ),
++                    ),
++                    const SizedBox(width: 12),
++                    Expanded(
++                      child: FilledButton.icon(
++                        onPressed: _lesson!.isPublished ? null : _publish,
++                        icon: const Icon(Icons.publish_rounded, size: 18),
++                        label: Text(_lesson!.isPublished ? 'Published' : 'Publish'),
++                      ),
++                    ),
++                  ],
++                ),
++                if (_lesson!.isPublished) ...[
++                  const SizedBox(height: 8),
++                  Align(
++                    alignment: Alignment.centerLeft,
++                    child: TextButton.icon(
++                      onPressed: () async {
++                        setState(() => _busyStatus = true);
++                        try {
++                          await _service.unpublishLesson(_lesson!.id);
++                          await _refreshLesson();
++                        } catch (_) {
++                          _snack('Failed to unpublish.');
++                        } finally {
++                          if (mounted) setState(() => _busyStatus = false);
++                        }
++                      },
++                      icon: const Icon(Icons.unpublished_outlined, size: 18),
++                      label: const Text('Unpublish'),
++                    ),
++                  ),
++                ],
++              ],
++            ),
+     );
+   }
+ }
+diff --git a/frontend/lib/screens/lessons/lesson_player_screen.dart b/frontend/lib/screens/lessons/lesson_player_screen.dart
+index 794f9e9..89bfc40 100644
+--- a/frontend/lib/screens/lessons/lesson_player_screen.dart
++++ b/frontend/lib/screens/lessons/lesson_player_screen.dart
+@@ -2,6 +2,7 @@ import 'package:chewie/chewie.dart';
+ import 'package:flutter/material.dart';
+ import 'package:go_router/go_router.dart';
+ import 'package:provider/provider.dart';
++import 'package:url_launcher/url_launcher.dart';
+ import 'package:video_player/video_player.dart';
+ import '../../core/constants/api_constants.dart';
+ import '../../core/theme/app_colors.dart';
+@@ -13,6 +14,14 @@ import '../../widgets/notes_widget.dart';
+ import '../../widgets/skeleton_box.dart';
+ import '../lesson_videos_screen.dart';
+ 
++/// Detects a manually-added YouTube link so it can be shown as a
++/// thumbnail + "open externally" instead of being fed to video_player
++/// (which can only play direct video files, not YouTube pages).
++String? _youtubeVideoId(String url) {
++  final match = RegExp(r'(?:youtube\.com/watch\?v=|youtube\.com/shorts/|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{6,})').firstMatch(url.trim());
++  return match?.group(1);
++}
++
+ /// Full lesson player: optional video, AI-generated explanation/key
+ /// points/examples/practice questions/summary, a Quiz button, recommended
+ /// YouTube videos, PDF notes, Previous/Next navigation, and Mark Complete.
+@@ -38,6 +47,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+ 
+   VideoPlayerController? _videoController;
+   ChewieController? _chewieController;
++  String? _youtubeId;
+ 
+   @override
+   void initState() {
+@@ -63,7 +73,15 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+       setState(() => _lesson = lesson);
+ 
+       if (lesson.videoUrl.isNotEmpty) {
+-        await _initVideo(ApiConstants.resolveMediaUrl(lesson.videoUrl));
++        final youtubeId = _youtubeVideoId(lesson.videoUrl);
++        if (youtubeId != null) {
++          // A teacher-added YouTube link - not a direct video file, so
++          // don't hand it to video_player. Preview instead, opened
++          // externally on tap (see _buildMediaArea).
++          setState(() => _youtubeId = youtubeId);
++        } else {
++          await _initVideo(ApiConstants.resolveMediaUrl(lesson.videoUrl));
++        }
+       }
+ 
+       // QA fix ("Missing mounted checks after async operations"): two
+@@ -111,6 +129,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+     _videoController?.dispose();
+     _chewieController = null;
+     _videoController = null;
++    _youtubeId = null;
+   }
+ 
+   @override
+@@ -476,6 +495,31 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
+       );
+     }
+ 
++    if (_youtubeId != null) {
++      final id = _youtubeId!;
++      return GestureDetector(
++        onTap: () async {
++          final uri = Uri.tryParse('https://www.youtube.com/watch?v=$id');
++          if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
++        },
++        child: AspectRatio(
++          aspectRatio: 16 / 9,
++          child: Stack(
++            fit: StackFit.expand,
++            children: [
++              Image.network(
++                'https://img.youtube.com/vi/$id/hqdefault.jpg',
++                fit: BoxFit.cover,
++                errorBuilder: (context, error, stackTrace) => Container(color: Colors.black12),
++              ),
++              Container(color: Colors.black.withOpacity(0.25)),
++              const Center(child: Icon(Icons.play_circle_fill_rounded, size: 64, color: Colors.white)),
++            ],
++          ),
++        ),
++      );
++    }
++
+     if (_chewieController == null) {
+       return Container(
+         height: 220,
+diff --git a/frontend/lib/screens/lessons/lessons_screen.dart b/frontend/lib/screens/lessons/lessons_screen.dart
+index 068bf7d..b1b3adf 100644
+--- a/frontend/lib/screens/lessons/lessons_screen.dart
++++ b/frontend/lib/screens/lessons/lessons_screen.dart
+@@ -9,6 +9,7 @@ import '../../providers/lesson_provider.dart';
+ import '../../services/storage_service.dart';
+ import '../../widgets/lesson_card.dart';
+ import '../../widgets/skeleton_box.dart';
++import '../courses/lesson_management_screen.dart';
+ 
+ /// Feature 3: ordered list of lessons within a subject, each showing a
+ /// completion checkmark backed by real, persisted progress
+@@ -54,6 +55,23 @@ class _LessonsScreenState extends State<LessonsScreen> {
+               icon: const Icon(Icons.assignment_rounded),
+               onPressed: () => context.push('/subject-assignments', extra: {'subjectId': widget.subjectId, 'subjectName': widget.subjectName}),
+             ),
++          // Lesson Resource Management (additive): teachers and admins
++          // manage this subject's lessons from here - everything else
++          // about this screen (student browsing/playing) is unchanged.
++          if (const ['teacher', 'admin'].contains(context.watch<AuthProvider>().currentUser?.role))
++            IconButton(
++              tooltip: 'Manage Lessons',
++              icon: const Icon(Icons.edit_note_rounded),
++              onPressed: () async {
++                await Navigator.push(
++                  context,
++                  MaterialPageRoute(
++                    builder: (_) => LessonManagementScreen(courseId: widget.subjectId, courseName: widget.subjectName),
++                  ),
++                );
++                if (mounted) context.read<LessonProvider>().loadLessons(widget.subjectId);
++              },
++            ),
+         ],
+       ),
+       body: RefreshIndicator(
+diff --git a/frontend/lib/services/course_service.dart b/frontend/lib/services/course_service.dart
+index b752276..9cc4881 100644
+--- a/frontend/lib/services/course_service.dart
++++ b/frontend/lib/services/course_service.dart
+@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
+ import '../core/constants/api_constants.dart';
+ import '../models/category_model.dart';
+ import '../models/course_model.dart';
++import '../models/note_model.dart';
+ import 'api_service.dart';
+ 
+ /// Admin-only Course Management: covers Categories, Courses (subjects),
+@@ -131,4 +132,57 @@ class CourseService {
+     final data = response['data'] as Map<String, dynamic>? ?? {};
+     return data['assignment_url'] as String? ?? '';
+   }
++
++  // --- Lesson Resource Management (additive) ---
++
++  Future<void> publishLesson(int id) async {
++    await _api.post(ApiConstants.lessonPublish(id), {});
++  }
++
++  Future<void> unpublishLesson(int id) async {
++    await _api.post(ApiConstants.lessonUnpublish(id), {});
++  }
++
++  Future<void> setLessonYoutubeUrl(int id, String youtubeUrl) async {
++    await _api.post(ApiConstants.lessonYoutubeUrl(id), {'youtube_url': youtubeUrl});
++  }
++
++  Future<void> removeLessonVideo(int id) async {
++    await _api.delete(ApiConstants.lessonRemoveVideo(id));
++  }
++
++  Future<void> removeLessonPdf(int id) async {
++    await _api.delete(ApiConstants.lessonRemovePdf(id));
++  }
++
++  // --- PDF Notes (title + description alongside the lesson's PDF) ---
++
++  Future<List<NoteModel>> listLessonNotes(int lessonId) async {
++    final response = await _api.get(ApiConstants.lessonNotes(lessonId));
++    final list = response['data'] as List<dynamic>? ?? [];
++    return list.map((json) => NoteModel.fromJson(json as Map<String, dynamic>)).toList();
++  }
++
++  Future<int> createLessonNote({required int lessonId, required String title, String description = '', required String pdfUrl}) async {
++    final response = await _api.post('/notes', {
++      'lesson_id': lessonId,
++      'title': title,
++      'description': description,
++      'pdf_url': pdfUrl,
++    });
++    final data = response['data'] as Map<String, dynamic>? ?? {};
++    return data['id'] as int? ?? 0;
++  }
++
++  Future<void> updateLessonNote(int noteId, {String? title, String? description, String? pdfUrl}) async {
++    final body = <String, dynamic>{};
++    if (title != null) body['title'] = title;
++    if (description != null) body['description'] = description;
++    if (pdfUrl != null) body['pdf_url'] = pdfUrl;
++    await _api.put(ApiConstants.noteUpdate(noteId), body);
++  }
++
++  Future<void> deleteLessonNote(int noteId) async {
++    await _api.delete(ApiConstants.noteDelete(noteId));
++  }
+ }

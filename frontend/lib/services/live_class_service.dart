@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
+import '../core/utils/safe_parse.dart';
 import '../models/live_class_model.dart';
 import 'api_service.dart';
 
@@ -32,7 +33,11 @@ class LiveClassService {
       'meeting_password': meetingPassword,
       'record_class': recordClass,
     });
-    return (response['data'] as Map<String, dynamic>)['id'] as int;
+    final data = response['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Failed to create live class: unexpected server response.');
+    }
+    return safeIntRequired(data['id'], 'id');
   }
 
   Future<void> cancel(int id) async => _api.post(ApiConstants.liveClassCancel(id), {});

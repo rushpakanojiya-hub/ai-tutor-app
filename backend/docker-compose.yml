@@ -1,4 +1,4 @@
-# Brings up PostgreSQL and the Go backend together for local development.
+﻿# Brings up PostgreSQL and the Go backend together for local development.
 # Usage: docker compose up --build
 #
 # The Flutter app still talks to the backend the same way as before —
@@ -40,12 +40,22 @@ services:
       PORT: 8080
       GIN_MODE: release
       APP_ENV: docker
-      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-root}@postgres:5432/${DB_NAME:-ai_tutor_db}?sslmode=disable
+      DATABASE_URL: "postgresql://postgres:CONFIRM1_PASSWORD@ai-tutor-db.c12wueweo2b2.ap-south-1.rds.amazonaws.com:5432/ai_tutor_db?sslmode=require"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       JWT_SECRET: ${JWT_SECRET:-insecure_dev_secret_change_me}
-      JWT_ACCESS_EXPIRY_MINUTES: ${JWT_ACCESS_EXPIRY_MINUTES:-60}
+      JWT_ACCESS_EXPIRY_MINUTES: "43200"
       JWT_REFRESH_EXPIRY_DAYS: ${JWT_REFRESH_EXPIRY_DAYS:-7}
+      GROQ_API_KEY: "${GROQ_API_KEY}"
+      YOUTUBE_API_KEY: "${YOUTUBE_API_KEY}"
+      YOUTUBE_MAX_RESULTS: "5"
+      LIVEKIT_URL: "wss://ai-tutor-app-uh2ki4to.livekit.cloud"
+      LIVEKIT_API_KEY: "APIpf6jFai4nYrb"
+      LIVEKIT_API_SECRET: "Xxu1CHZI2t2NU7mTfUYqyk1ylaT6yWKIkZAk0BrnOxT"
+      CLOUDINARY_CLOUD_NAME: "dkunif6kd"
+      CLOUDINARY_API_KEY: "388133647461626"
+      CLOUDINARY_API_SECRET: "3pmCNYrWv-wbNKTfe1EAvZJNZ1M"
     ports:
-      - "8080:8080"
+      - "80:8080"
     networks:
       - backend-network
 

@@ -60,9 +60,11 @@ func (s *Service) GetVideosForLesson(ctx context.Context, lessonID int64) ([]You
 
 	if len(videos) == 0 {
 		videos = []YoutubeVideo{}
-	}
-
-	if err := s.repo.SaveCache(ctx, lessonID, query, videos); err != nil {
+	} else if err := s.repo.SaveCache(ctx, lessonID, query, videos); err != nil {
+		// Only cache non-empty results for the full 24h TTL - caching an
+		// empty result would "lock in" a transient miss (a bad query, an
+		// API hiccup, temporary no matches) for a full day, hiding videos
+		// that would have been found on a retry a few minutes later.
 		log.Printf("youtube: failed to write cache for lesson %d: %v", lessonID, err)
 	}
 

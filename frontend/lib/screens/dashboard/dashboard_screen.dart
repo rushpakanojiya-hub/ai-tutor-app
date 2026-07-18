@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -184,7 +184,9 @@ class _DashboardHomeState extends State<_DashboardHome> {
           _buildSearchBar(),
           const SizedBox(height: 24),
           if (_pendingAssignments.isNotEmpty) ...[
-            _sectionHeader('New Assignments', onSeeAll: () => context.push('/assignment-detail', extra: {'assignmentId': _pendingAssignments.first.id})),
+            _sectionHeader('New Assignments', onSeeAll: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StudentAssignmentsScreen()),
+            )),
             const SizedBox(height: 12),
             ..._pendingAssignments.take(2).map(_buildAssignmentCard),
             const SizedBox(height: 20),
@@ -263,19 +265,29 @@ class _DashboardHomeState extends State<_DashboardHome> {
           ),
         ),
         const SizedBox(width: 10),
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            color: AppColors.purpleLight,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: AppTheme.softShadow,
-          ),
-          child: Center(
-            child: Text(
-              (name.isNotEmpty ? name[0] : '?').toUpperCase(),
-              style: const TextStyle(fontSize: 20, color: AppColors.purple, fontWeight: FontWeight.w700),
+        Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.purpleLight,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: AppTheme.softShadow,
+              ),
+              child: Center(
+                child: Text(
+                  (name.isNotEmpty ? name[0] : '?').toUpperCase(),
+                  style: const TextStyle(fontSize: 20, color: AppColors.purple, fontWeight: FontWeight.w700),
+                ),
+              ),
             ),
           ),
         ),

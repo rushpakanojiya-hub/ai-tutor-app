@@ -29,3 +29,6 @@ frontend/**/*.iml
 .DS_Store
 Thumbs.db
 frontend/android/build/
+
+# Deployment build artifacts - should never be committed
+*.zip

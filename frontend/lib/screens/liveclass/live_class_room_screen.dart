@@ -1,8 +1,9 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -490,43 +491,67 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
 
   Future<void> _acceptHand(String identity) async {
     await _publish({'type': 'hand_accepted', 'identity': identity});
-    setState(() => _raisedHandsAt.remove(identity));
+    if (mounted) setState(() => _raisedHandsAt.remove(identity));
   }
 
   Future<void> _lowerHand(String identity) async {
     await _publish({'type': 'hand_lowered_by_teacher', 'identity': identity});
-    setState(() => _raisedHandsAt.remove(identity));
+    if (mounted) setState(() => _raisedHandsAt.remove(identity));
   }
 
   Future<void> _clearAllHands() async {
     await _publish({'type': 'hands_cleared', 'identity': _room.localParticipant?.identity ?? ''});
-    setState(() => _raisedHandsAt.clear());
+    if (mounted) setState(() => _raisedHandsAt.clear());
   }
 
   // --- Screen Share (LiveKit built-in - no backend, just another track) ---
 
   static const _screenShareChannel = MethodChannel('ai_tutor_app/screen_share');
+  bool _screenShareBusy = false;
 
   Future<void> _toggleScreenShare() async {
+    if (_screenShareBusy) return; // ignore taps while a toggle is in flight
+    _screenShareBusy = true;
     try {
       final newState = !_screenSharing;
 
       if (newState) {
-        // Must start BEFORE setScreenShareEnabled(true) - Android 14+
-        // kills the app if MediaProjection.start() is called without an
-        // active foregroundServiceType="mediaProjection" service running.
+        // The LiveKit-documented, Android-verified correct sequence:
+        // https://docs.livekit.io/transport/media/screenshare/ -
+        // "Before starting the background service and enabling screen
+        // share, you MUST call Helper.requestCapturePermission() from
+        // flutter_webrtc, and only proceed if it returns true."
+        //
+        // Calling setScreenShareEnabled() directly (without this step)
+        // bundles "ask permission" and "start capturing" into one native
+        // call - flutter_webrtc's getDisplayMedia() calls
+        // MediaProjectionManager.getMediaProjection() immediately after
+        // the permission dialog closes, which crashes with
+        // "Media projections require a foreground service of type
+        // ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION" because
+        // our foreground service isn't running yet at that instant.
+        //
+        // Correct order: request permission only (Helper) -> start our
+        // foreground service -> THEN call setScreenShareEnabled, which
+        // now succeeds because both Android requirements (permission
+        // granted, service running) are already satisfied.
+        final granted = await webrtc.Helper.requestCapturePermission();
+        if (!granted) {
+          _showToast('Screen recording permission is required to share your screen.');
+          return;
+        }
+
         await _screenShareChannel.invokeMethod('startScreenShareService');
-      }
-
-      await _room.localParticipant?.setScreenShareEnabled(newState);
-
-      if (!newState) {
-        await _screenShareChannel.invokeMethod('stopScreenShareService');
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _room.localParticipant?.setScreenShareEnabled(true);
+      } else {
+        await _room.localParticipant?.setScreenShareEnabled(false);
+        await _screenShareChannel.invokeMethod('stopScreenShareService').catchError((_) {});
       }
 
       // ignore: avoid_print
       print('[LiveClassRoom] Screen share toggled to $newState successfully');
-      setState(() => _screenSharing = newState);
+      if (mounted) setState(() => _screenSharing = newState);
     } catch (e, stackTrace) {
       // ignore: avoid_print
       print('[LiveClassRoom] Screen share toggle failed: $e');
@@ -534,6 +559,8 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
       print(stackTrace);
       await _screenShareChannel.invokeMethod('stopScreenShareService').catchError((_) {});
       _showToast('Could not ${_screenSharing ? "stop" : "start"} screen sharing on this device.');
+    } finally {
+      _screenShareBusy = false;
     }
   }
 
@@ -663,7 +690,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
           if (mounted) setState(() => _uploadProgress = p);
         },
       );
-      setState(() => _resources = [resource, ..._resources]);
+      if (mounted) setState(() => _resources = [resource, ..._resources]);
       await _publish({'type': 'resource_shared', 'identity': _room.localParticipant?.identity ?? '', 'name': resource.fileName});
       _showToast('Shared "${resource.fileName}" with the class');
     } catch (e) {
@@ -679,7 +706,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
   Future<void> _deleteResource(ClassResourceModel resource) async {
     try {
       await _classService.deleteResource(widget.classId, resource.id);
-      setState(() => _resources.removeWhere((r) => r.id == resource.id));
+      if (mounted) setState(() => _resources.removeWhere((r) => r.id == resource.id));
     } catch (e) {
       _showToast('Failed to delete file.');
     }
@@ -754,7 +781,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
       } else {
         await _classService.unlockRoom(widget.classId);
       }
-      setState(() => _roomLocked = !_roomLocked);
+      if (mounted) setState(() => _roomLocked = !_roomLocked);
     } catch (e) {
       _showToast('Failed to update room lock');
     }
@@ -898,7 +925,7 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     final newState = !_speakerphoneOn;
     try {
       await lk.Hardware.instance.setSpeakerphoneOn(newState);
-      setState(() => _speakerphoneOn = newState);
+      if (mounted) setState(() => _speakerphoneOn = newState);
     } catch (e) {
       _showToast('Could not change audio output on this device.');
     }
@@ -907,13 +934,13 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
   Future<void> _toggleMic() async {
     final newState = !_micEnabled;
     await _room.localParticipant?.setMicrophoneEnabled(newState);
-    setState(() => _micEnabled = newState);
+    if (mounted) setState(() => _micEnabled = newState);
   }
 
   Future<void> _toggleCamera() async {
     final newState = !_cameraEnabled;
     await _room.localParticipant?.setCameraEnabled(newState);
-    setState(() => _cameraEnabled = newState);
+    if (mounted) setState(() => _cameraEnabled = newState);
   }
 
   Future<void> _switchCamera() async {

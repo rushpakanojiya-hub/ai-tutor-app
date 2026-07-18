@@ -39,6 +39,19 @@ class AuthProvider extends ChangeNotifier {
     super.dispose();
   }
 
+  // --- Editable name (additive) ---
+  //
+  // Updates the cached user (so the rest of the app reflects the new
+  // name immediately, no re-login needed) and persists it to secure
+  // storage, same as tryAutoLogin reads it back from.
+  Future<void> updateLocalName(String name) async {
+    if (currentUser != null) {
+      currentUser = UserModel(id: currentUser!.id, name: name, role: currentUser!.role);
+      await _storage.setString(AppConstants.keyUserName, name);
+      notifyListeners();
+    }
+  }
+
   /// Called once at app startup to check for a previously saved session.
   Future<void> tryAutoLogin() async {
     final token = await _storage.getString(AppConstants.keyAuthToken);

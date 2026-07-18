@@ -73,8 +73,29 @@ func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
 }
 
 func (s *Service) Update(classID, teacherID int, req UpdateRequest) error {
-	if req.StartTime != nil && req.EndTime != nil {
-		if err := validateTimeRange(*req.StartTime, *req.EndTime); err != nil {
+	// QA fix ("Live Class Update - time-range validation on partial
+	// updates"): validation previously only ran when BOTH start_time and
+	// end_time were sent in the same request. A partial update sending
+	// only one of the two (e.g. moving start_time later than the
+	// existing end_time, or end_time earlier than the existing
+	// start_time) skipped validation entirely, letting an invalid range
+	// (end <= start) be persisted. Now we resolve the EFFECTIVE start/end
+	// - the new value if provided, otherwise the class's current value -
+	// and validate that pair whenever either field is part of the update.
+	if req.StartTime != nil || req.EndTime != nil {
+		existing, err := s.repo.GetByID(classID)
+		if err != nil {
+			return err
+		}
+		effectiveStart := existing.StartTime
+		if req.StartTime != nil {
+			effectiveStart = *req.StartTime
+		}
+		effectiveEnd := existing.EndTime
+		if req.EndTime != nil {
+			effectiveEnd = *req.EndTime
+		}
+		if err := validateTimeRange(effectiveStart, effectiveEnd); err != nil {
 			return err
 		}
 	}

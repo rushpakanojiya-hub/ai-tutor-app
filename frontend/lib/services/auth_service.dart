@@ -61,13 +61,26 @@ class AuthService {
       'password': password,
     });
 
-    final token = response['token'] as String;
-    final user = UserModel.fromJson(response['user'] as Map<String, dynamic>);
-    return LoginResult(token: token, user: user);
+    final rawToken = response['token'];
+    if (rawToken is! String || rawToken.isEmpty) {
+      throw Exception('Login failed: server did not return a valid token.');
+    }
+
+    final rawUser = response['user'];
+    if (rawUser is! Map<String, dynamic>) {
+      throw Exception('Login failed: server did not return valid user data.');
+    }
+
+    final user = UserModel.fromJson(rawUser);
+    return LoginResult(token: rawToken, user: user);
   }
 
   Future<Map<String, dynamic>> fetchProfile() async {
     final response = await _api.get(ApiConstants.profile);
-    return response['data'] as Map<String, dynamic>;
+    final data = response['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Failed to load profile: unexpected server response.');
+    }
+    return data;
   }
 }

@@ -70,12 +70,13 @@ class _CreateAssignmentScreenState extends State<CreateAssignmentScreen> {
         topic: _topicController.text.trim(),
         difficulty: _difficulty,
       );
+      if (!mounted) return;
       _titleController.text = draft.title;
       _descriptionController.text = draft.description;
       _instructionsController.text = draft.instructions;
       _estimatedMinutes = draft.estimatedMinutes;
     } catch (e) {
-      setState(() => _error = 'Could not generate a draft. Please try again or fill it in manually.');
+      if (mounted) setState(() => _error = 'Could not generate a draft. Please try again or fill it in manually.');
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -110,7 +111,7 @@ class _CreateAssignmentScreenState extends State<CreateAssignmentScreen> {
         context.pop();
       }
     } catch (e) {
-      setState(() => _error = 'Failed to create assignment. Please try again.');
+      if (mounted) setState(() => _error = 'Failed to create assignment. Please try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
