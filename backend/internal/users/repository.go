@@ -3,9 +3,15 @@ package users
 import (
 	"database/sql"
 	"errors"
+
+	"github.com/lib/pq"
 )
 
 var ErrEmailAlreadyExists = errors.New("email already registered")
+
+// pqUniqueViolation is Postgres's SQLSTATE code for a unique-constraint
+// violation - same constant/pattern as auth/repository.go.
+const pqUniqueViolation = "23505"
 
 type Repository struct {
 	db *sql.DB
@@ -38,18 +44,28 @@ func (r *Repository) UpdateName(id int, name string) error {
 	return err
 }
 
+// UpdateNameAndEmail updates a user's profile name/email.
+//
+// QA fix ("TOCTOU on email uniqueness; raw 500 instead of translated
+// 409"): the previous version did a SELECT-then-UPDATE check - two
+// concurrent updates to the same new email could both pass the SELECT
+// before either UPDATE ran, and if the UPDATE itself then hit the DB's
+// UNIQUE constraint (users_email_unique_idx, migration 026), the raw
+// Postgres error propagated straight up as an unhandled 500 instead of
+// the intended "email already in use" conflict. Now the UPDATE is
+// attempted directly and a unique-violation is translated into
+// ErrEmailAlreadyExists - race-proof, since Postgres itself serializes
+// the conflicting updates and only lets one succeed.
 func (r *Repository) UpdateNameAndEmail(id int, name, email string) error {
-	var existingID int
-	err := r.db.QueryRow(`SELECT id FROM users WHERE email = $1`, email).Scan(&existingID)
-	if err == nil && existingID != id {
-		return ErrEmailAlreadyExists
-	}
-	if err != nil && err != sql.ErrNoRows {
+	_, err := r.db.Exec(`UPDATE users SET name = $1, email = $2 WHERE id = $3`, name, email, id)
+	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
+			return ErrEmailAlreadyExists
+		}
 		return err
 	}
-
-	_, err = r.db.Exec(`UPDATE users SET name = $1, email = $2 WHERE id = $3`, name, email, id)
-	return err
+	return nil
 }
 
 func (r *Repository) GetPasswordHash(id int) (string, error) {
