@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+﻿<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 <uses-permission android:name="android.permission.INTERNET"/>
 <uses-permission android:name="android.permission.CAMERA"/>
@@ -11,7 +11,7 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
    <application
-    android:label="ai_tutor_app"
+    android:label="One Tutor AI"
     android:usesCleartextTraffic="true"
     android:icon="@mipmap/ic_launcher">
         <activity

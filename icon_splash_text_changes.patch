@@ -1,0 +1,49 @@
+diff --git a/frontend/android/app/src/main/AndroidManifest.xml b/frontend/android/app/src/main/AndroidManifest.xml
+index 2487b74..add5b71 100644
+--- a/frontend/android/app/src/main/AndroidManifest.xml
++++ b/frontend/android/app/src/main/AndroidManifest.xml
+@@ -11,7 +11,7 @@
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+ <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application
+-    android:label="ai_tutor_app"
++    android:label="One Tutor App"
+     android:usesCleartextTraffic="true"
+     android:icon="@mipmap/ic_launcher">
+         <activity
+diff --git a/frontend/lib/screens/splash/splash_screen.dart b/frontend/lib/screens/splash/splash_screen.dart
+index f97c6fa..7597940 100644
+--- a/frontend/lib/screens/splash/splash_screen.dart
++++ b/frontend/lib/screens/splash/splash_screen.dart
+@@ -37,11 +37,19 @@ class _SplashScreenState extends State<SplashScreen> {
+                 color: Colors.white,
+                 borderRadius: BorderRadius.circular(24),
+               ),
+-              child: const Icon(Icons.school_rounded, size: 52, color: AppColors.primary),
++              child: ClipRRect(
++                borderRadius: BorderRadius.circular(24),
++                child: Image.asset(
++                  'assets/images/app_logo.png',
++                  width: 96,
++                  height: 96,
++                  fit: BoxFit.cover,
++                ),
++              ),
+             ),
+             const SizedBox(height: 20),
+             const Text(
+-              'AI Tutor',
++              'One Tutor App',
+               style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+             ),
+             const SizedBox(height: 6),
+diff --git a/frontend/pubspec.yaml b/frontend/pubspec.yaml
+index c6bb2fd..816e5b3 100644
+--- a/frontend/pubspec.yaml
++++ b/frontend/pubspec.yaml
+@@ -46,3 +46,5 @@ dev_dependencies:
+   flutter_lints: ^4.0.0
+ flutter:
+   uses-material-design: true
++  assets:
++    - assets/images/

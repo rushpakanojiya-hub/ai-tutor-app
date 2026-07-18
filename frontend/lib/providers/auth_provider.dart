@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../core/constants/app_constants.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
@@ -53,14 +53,36 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Called once at app startup to check for a previously saved session.
+  ///
+  /// QA fix ("Splash screen disappears in milliseconds"): the storage
+  /// reads below finish almost instantly, and _setStatus() is what
+  /// actually triggers GoRouter's redirect via statusNotifier - so
+  /// wrapping the CALLER's await in a delay (e.g. in splash_screen.dart)
+  /// doesn't help, since the status change itself already fired before
+  /// that delay even starts. The minimum-duration wait has to live here,
+  /// wrapping the status change directly - the real storage check and a
+  /// 2-second timer run together, and whichever finishes last is what
+  /// _setStatus waits on.
   Future<void> tryAutoLogin() async {
-    final token = await _storage.getString(AppConstants.keyAuthToken);
-    final userId = await _storage.getInt(AppConstants.keyUserId);
-    final userName = await _storage.getString(AppConstants.keyUserName);
-    final userRole = await _storage.getString(AppConstants.keyUserRole);
+    String? token;
+    int? userId;
+    String? userName;
+    String? userRole;
+
+    Future<void> readSession() async {
+      token = await _storage.getString(AppConstants.keyAuthToken);
+      userId = await _storage.getInt(AppConstants.keyUserId);
+      userName = await _storage.getString(AppConstants.keyUserName);
+      userRole = await _storage.getString(AppConstants.keyUserRole);
+    }
+
+    await Future.wait([
+      readSession(),
+      Future.delayed(const Duration(seconds: 2)),
+    ]);
 
     if (token != null && userId != null && userName != null && userRole != null) {
-      currentUser = UserModel(id: userId, name: userName, role: userRole);
+      currentUser = UserModel(id: userId!, name: userName!, role: userRole!);
       _setStatus(AuthStatus.authenticated);
     } else {
       _setStatus(AuthStatus.unauthenticated);
