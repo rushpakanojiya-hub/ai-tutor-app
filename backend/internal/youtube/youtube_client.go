@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,18 @@ var blockedKeywords = []string{
 	"gameplay", "let's play", "reaction", "prank", "vlog", "meme",
 }
 
+// apiKeyParamPattern matches the "key=<value>" query parameter so it can be
+// redacted from any string (error message or log line) before it is ever
+// written out. This is the fix for the CRITICAL API-key leak: Go's
+// *url.Error stringifies the full request URL - including "?...&key=SECRET"
+// - inside err.Error(). Every error that might carry a request URL is
+// passed through redact() before leaving this file.
+var apiKeyParamPattern = regexp.MustCompile(`(?i)([?&]key=)[^&\s"']+`)
+
+func redact(s string) string {
+	return apiKeyParamPattern.ReplaceAllString(s, "${1}REDACTED")
+}
+
 // Client is a dedicated, self-contained YouTube Data API v3 client with
 // timeout, retry, multi-key rotation on quota/rate-limit errors, and logging.
 //
@@ -56,14 +69,6 @@ type Client struct {
 func NewClient(apiKeys []string, maxResults int) *Client {
 	if maxResults <= 0 {
 		maxResults = 5
-	}
-	// YouTube's Search API caps maxResults at 50 per request, and we
-	// over-fetch at 2x this value (see the search call below) before
-	// filtering/ranking - so this must never exceed 25, or the doubled
-	// value sent to the API would exceed YouTube's hard limit and the
-	// request would fail with a 400 error.
-	if maxResults > 25 {
-		maxResults = 25
 	}
 	clean := make([]string, 0, len(apiKeys))
 	for _, k := range apiKeys {
@@ -114,6 +119,11 @@ type videosResponse struct {
 // Search queries YouTube for educational videos matching q, rotating across
 // configured API keys if one hits its quota, applies channel priority
 // ranking and blocklist filtering, and enriches results with duration.
+//
+// Every error returned by this function is guaranteed redact()-safe - it
+// will never contain any configured API key, even if the underlying HTTP
+// client error (e.g. a *url.Error from a dial/timeout failure) embedded
+// the full request URL.
 func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 	if len(c.apiKeys) == 0 {
 		return nil, fmt.Errorf("youtube: no YOUTUBE_API_KEY configured")
@@ -137,11 +147,7 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 		params.Set("videoDuration", "medium") // excludes most Shorts
 		params.Set("safeSearch", "strict")
 		params.Set("relevanceLanguage", "en")
-		// Clamp to YouTube's hard API limit of 50 - if maxResults is
-		// configured high enough that maxResults*2 would exceed it, the
-		// API rejects the request with a 400 error instead of just
-		// capping it for us.
-		params.Set("maxResults", fmt.Sprintf("%d", min(c.maxResults*2, 50))) // over-fetch, then filter/rank
+		params.Set("maxResults", fmt.Sprintf("%d", c.maxResults*2)) // over-fetch, then filter/rank
 		params.Set("key", key)
 
 		err := c.getWithRetry(ctx, youtubeSearchEndpoint+"?"+params.Encode(), &sr)
@@ -151,11 +157,11 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 
 		lastErr = err
 		if isQuotaError(err) {
-			log.Printf("youtube: key #%d exhausted/rate-limited, rotating to next key: %v", idx, err)
+			log.Printf("youtube: key #%d exhausted/rate-limited, rotating to next key", idx)
 			c.markBlocked(idx)
 			continue
 		}
-		// Non-quota error (network, 5xx, etc.) â€” don't burn through all keys, just fail.
+		// Non-quota error (network, 5xx, etc.) - don't burn through all keys, just fail.
 		return nil, err
 	}
 
@@ -164,7 +170,7 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 	}
 
 	if lastErr != nil && len(sr.Items) == 0 {
-		return nil, fmt.Errorf("youtube: all configured keys exhausted or failed: %w", lastErr)
+		return nil, fmt.Errorf("youtube: all configured keys exhausted or failed")
 	}
 
 	if len(sr.Items) == 0 {
@@ -186,7 +192,7 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 		} else {
 			v.Thumbnail = item.Snippet.Thumbnails.Medium.URL
 		}
-		if isBlocked(v.Title, v.Description) {
+		if v.VideoID == "" || isBlocked(v.Title, v.Description) {
 			continue
 		}
 		videoIDs = append(videoIDs, v.VideoID)
@@ -214,7 +220,7 @@ func (c *Client) Search(ctx context.Context, q string) ([]YoutubeVideo, error) {
 				}
 			}
 		} else {
-			log.Printf("youtube: duration enrichment failed (non-fatal): %v", err)
+			log.Printf("youtube: duration enrichment failed (non-fatal): %s", redact(err.Error()))
 		}
 	}
 
@@ -241,7 +247,7 @@ func (c *Client) nextAvailableKey() (int, string, bool) {
 	n := len(c.apiKeys)
 	for i := 0; i < n; i++ {
 		idx := (c.currentIdx + i) % n
-		if until, blocked := c.blockedUntil[idx]; blocked && time.Now().Before(until) {
+		if until, blocked := c.blockedUntil[idx]; blocked && time.Now().UTC().Before(until) {
 			continue
 		}
 		c.currentIdx = (idx + 1) % n // advance for next call (round-robin)
@@ -255,8 +261,8 @@ func (c *Client) markBlocked(idx int) {
 	defer c.mu.Unlock()
 	// YouTube daily quota resets at midnight Pacific time; a short cooldown
 	// here just prevents hammering the same exhausted key within this
-	// process's lifetime â€” restart or next day naturally clears it.
-	c.blockedUntil[idx] = time.Now().Add(6 * time.Hour)
+	// process's lifetime - restart or next day naturally clears it.
+	c.blockedUntil[idx] = time.Now().UTC().Add(6 * time.Hour)
 }
 
 func isQuotaError(err error) bool {
@@ -270,6 +276,12 @@ func isQuotaError(err error) bool {
 // single key/URL. Quota/rate-limit responses (429/403) are surfaced
 // immediately (as a distinguishable error) so Search() can rotate keys
 // instead of wasting retries on an exhausted key.
+//
+// SECURITY: fullURL contains the live API key as a query parameter (the
+// YouTube Data API requires this). Neither the returned error nor any log
+// line in this function may ever include fullURL or the raw client error
+// verbatim - both are passed through redact() first, since a *url.Error
+// from httpClient.Do would otherwise embed the whole URL (key included).
 func (c *Client) getWithRetry(ctx context.Context, fullURL string, out interface{}) error {
 	var lastErr error
 	backoff := 500 * time.Millisecond
@@ -277,13 +289,16 @@ func (c *Client) getWithRetry(ctx context.Context, fullURL string, out interface
 	for attempt := 1; attempt <= 3; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 		if err != nil {
-			return err
+			return fmt.Errorf("youtube: failed to build request: %s", redact(err.Error()))
 		}
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			lastErr = err
-			log.Printf("youtube: request error (attempt %d/3): %v", attempt, err)
+			lastErr = fmt.Errorf("youtube: request failed (attempt %d/3)", attempt)
+			log.Printf("youtube: request error (attempt %d/3): %s", attempt, redact(err.Error()))
+			if ctx.Err() != nil {
+				return lastErr // context canceled/deadline exceeded - retrying won't help
+			}
 			time.Sleep(backoff)
 			backoff *= 2
 			continue
@@ -299,7 +314,11 @@ func (c *Client) getWithRetry(ctx context.Context, fullURL string, out interface
 			case resp.StatusCode != http.StatusOK:
 				lastErr = fmt.Errorf("youtube: unexpected status %d", resp.StatusCode)
 			default:
-				lastErr = json.NewDecoder(resp.Body).Decode(out)
+				if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+					lastErr = fmt.Errorf("youtube: failed to parse response: %s", redact(err.Error()))
+				} else {
+					lastErr = nil
+				}
 			}
 		}()
 
@@ -311,7 +330,7 @@ func (c *Client) getWithRetry(ctx context.Context, fullURL string, out interface
 			return lastErr // don't retry a quota error, let Search() rotate keys
 		}
 
-		log.Printf("youtube: attempt %d/3 failed: %v", attempt, lastErr)
+		log.Printf("youtube: attempt %d/3 failed: %s", attempt, redact(lastErr.Error()))
 		time.Sleep(backoff)
 		backoff *= 2
 	}

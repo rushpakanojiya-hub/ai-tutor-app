@@ -90,8 +90,14 @@ func (r *Repository) SetStatus(classID, teacherID int, status string) error {
 // AdminCancel bypasses the teacher-ownership check - admin can cancel
 // any class platform-wide.
 func (r *Repository) AdminCancel(classID int) error {
-	_, err := r.db.Exec(`UPDATE live_classes SET status = $1, updated_at = now() WHERE id = $2`, StatusCancelled, classID)
-	return err
+	res, err := r.db.Exec(`UPDATE live_classes SET status = $1, updated_at = now() WHERE id = $2`, StatusCancelled, classID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetMeetingLive records that the teacher started the video session -
@@ -126,10 +132,26 @@ func (r *Repository) Delete(classID, teacherID int) error {
 	return err
 }
 
-// computedStatus turns a stored 'scheduled' row into 'missed' once its
+// computedStatusExpr turns a stored 'scheduled' row into 'missed' once its
 // end time has passed, without needing a background job.
+//
+// BUG FIX (timezone mismatch): class_date/start_time/end_time are plain
+// DATE/TIME columns with no timezone attached (see migration 016).
+// `(lc.class_date + lc.end_time)` is therefore a TIMESTAMP WITHOUT TIME
+// ZONE, and comparing it directly to now() (TIMESTAMPTZ) makes Postgres
+// implicitly interpret that naive timestamp using the DB SESSION's
+// configured timezone - which may or may not match the timezone
+// teachers actually schedule classes in. If the session defaults to UTC
+// while class times are entered in India Standard Time (this app's
+// target audience), "missed"/"completed" status and attendance windows
+// would be off by 5.5 hours. `AT TIME ZONE 'Asia/Kolkata'` makes the
+// interpretation explicit instead of relying on whatever the session
+// happens to be set to. If your deployment's teachers/students are in a
+// different timezone, change this literal to match.
 const computedStatusExpr = `
-	CASE WHEN lc.status = 'scheduled' AND lc.meeting_status != 'live' AND (lc.class_date + lc.end_time) < now() THEN 'missed' ELSE lc.status END
+	CASE WHEN lc.status = 'scheduled' AND lc.meeting_status != 'live'
+	     AND ((lc.class_date + lc.end_time) AT TIME ZONE 'Asia/Kolkata') < now()
+	THEN 'missed' ELSE lc.status END
 `
 
 const liveClassSelect = `
@@ -300,12 +322,16 @@ func (r *Repository) ListAttendanceForClass(classID, teacherID int) ([]Attendanc
 // GetAttendanceSummaryForStudent: attendance % across every class that
 // has already ended (completed/missed) - the honest denominator, since
 // there's no per-class enrollment to know who was "supposed" to attend.
+//
+// BUG FIX (timezone mismatch): same reasoning as computedStatusExpr above -
+// `AT TIME ZONE 'Asia/Kolkata'` makes the DATE+TIME -> instant conversion
+// explicit instead of depending on the DB session's timezone setting.
 func (r *Repository) GetAttendanceSummaryForStudent(studentID int) (*AttendanceSummary, error) {
 	summary := &AttendanceSummary{}
 
 	err := r.db.QueryRow(`
 		SELECT COUNT(*) FROM live_classes
-		WHERE status = 'completed' OR (status = 'scheduled' AND (class_date + end_time) < now())
+		WHERE status = 'completed' OR (status = 'scheduled' AND ((class_date + end_time) AT TIME ZONE 'Asia/Kolkata') < now())
 	`).Scan(&summary.TotalCompletedClasses)
 	if err != nil {
 		return nil, err
@@ -315,7 +341,7 @@ func (r *Repository) GetAttendanceSummaryForStudent(studentID int) (*AttendanceS
 		SELECT COUNT(*) FROM live_class_attendance a
 		JOIN live_classes lc ON lc.id = a.live_class_id
 		WHERE a.student_id = $1
-		AND (lc.status = 'completed' OR (lc.status = 'scheduled' AND (lc.class_date + lc.end_time) < now()))
+		AND (lc.status = 'completed' OR (lc.status = 'scheduled' AND ((lc.class_date + lc.end_time) AT TIME ZONE 'Asia/Kolkata') < now()))
 	`, studentID).Scan(&summary.AttendedCount)
 	if err != nil {
 		return nil, err

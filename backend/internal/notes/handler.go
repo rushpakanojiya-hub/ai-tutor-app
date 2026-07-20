@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ai-tutor-backend/pkg/logger"
 	"ai-tutor-backend/utils"
 )
 
@@ -32,6 +33,20 @@ func requireTeacherOrAdmin(c *gin.Context) bool {
 	return true
 }
 
+// isValidationError reports whether err is one of the plain input-
+// validation errors Service.Create returns directly - these only ever
+// describe the client's own input and are safe to show verbatim.
+// Anything else (e.g. a foreign-key violation because lesson_id doesn't
+// exist) is a real DB error and must not be echoed to the client.
+func isValidationError(err error) bool {
+	switch err.Error() {
+	case "title and pdf_url are required", "a valid lesson_id is required":
+		return true
+	default:
+		return false
+	}
+}
+
 // ListByLesson handles GET /api/lessons/:id/notes.
 func (h *Handler) ListByLesson(c *gin.Context) {
 	lessonID, err := strconv.Atoi(c.Param("id"))
@@ -41,6 +56,7 @@ func (h *Handler) ListByLesson(c *gin.Context) {
 	}
 	list, err := h.service.ListByLesson(lessonID)
 	if err != nil {
+		logger.Error("notes: ListByLesson failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load notes")
 		return
 	}
@@ -51,6 +67,11 @@ func (h *Handler) ListByLesson(c *gin.Context) {
 //
 // QA fix: previously had no role check - any authenticated user could
 // create a note.
+//
+// BUG FIX (info leak): a DB error (e.g. lesson_id referencing a lesson
+// that doesn't exist -> foreign-key violation) used to be sent to the
+// client verbatim via err.Error(). Only known-safe validation messages
+// are shown now; anything else is logged server-side.
 func (h *Handler) Create(c *gin.Context) {
 	if !requireTeacherOrAdmin(c) {
 		return
@@ -62,7 +83,12 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	id, err := h.service.Create(req)
 	if err != nil {
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
+		if isValidationError(err) {
+			utils.RespondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		logger.Error("notes: Create failed", err)
+		utils.RespondError(c, http.StatusBadRequest, "Could not create note - check that the lesson exists")
 		return
 	}
 	utils.RespondSuccess(c, http.StatusCreated, "Note created", gin.H{"id": id})
@@ -72,6 +98,8 @@ func (h *Handler) Create(c *gin.Context) {
 
 // Update handles PUT /api/notes/:id (teacher or admin) - "Replace PDF"
 // and editing PDF title/description.
+//
+// BUG FIX (info leak): same reasoning as Create above.
 func (h *Handler) Update(c *gin.Context) {
 	if !requireTeacherOrAdmin(c) {
 		return
@@ -91,7 +119,8 @@ func (h *Handler) Update(c *gin.Context) {
 			utils.RespondError(c, http.StatusNotFound, "Note not found")
 			return
 		}
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
+		logger.Error("notes: Update failed", err)
+		utils.RespondError(c, http.StatusInternalServerError, "Failed to update note")
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Note updated", nil)
@@ -112,6 +141,7 @@ func (h *Handler) Delete(c *gin.Context) {
 			utils.RespondError(c, http.StatusNotFound, "Note not found")
 			return
 		}
+		logger.Error("notes: Delete failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to delete note")
 		return
 	}

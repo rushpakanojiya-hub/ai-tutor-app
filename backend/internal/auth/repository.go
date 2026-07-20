@@ -147,6 +147,11 @@ func (r *Repository) FindByID(id int) (*User, error) {
 
 // ListTeacherApplications returns teacher accounts filtered by status
 // (e.g. "pending"), for the admin approval queue.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop - a
+// connection/network error that struck mid-iteration would silently
+// truncate the result set instead of surfacing as an error, showing the
+// admin an incomplete (but seemingly valid) approval queue.
 func (r *Repository) ListTeacherApplications(status string) ([]TeacherApplication, error) {
 	rows, err := r.db.Query(`
 		SELECT u.id, u.name, u.email, COALESCE(tp.phone, ''), COALESCE(tp.qualification, ''),
@@ -169,11 +174,24 @@ func (r *Repository) ListTeacherApplications(status string) ([]TeacherApplicatio
 		}
 		result = append(result, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 // UpdateUserStatus is used by the admin approve/reject endpoints.
 func (r *Repository) UpdateUserStatus(userID int, status string) error {
-	_, err := r.db.Exec(`UPDATE users SET status = $1 WHERE id = $2`, status, userID)
-	return err
+	res, err := r.db.Exec(`UPDATE users SET status = $1 WHERE id = $2`, status, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }

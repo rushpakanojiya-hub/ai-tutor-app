@@ -137,6 +137,10 @@ func (r *Repository) SearchByName(userID int, query string) ([]Subject, error) {
 	if err != nil {
 		return nil, err
 	}
+	// BUG FIX: rows.Close() was missing entirely (not just rows.Err()) -
+	// every call to SearchByName leaked a DB connection/statement handle,
+	// since nothing ever released it back to the pool.
+	defer rows.Close()
 
 	var result []Subject
 	for rows.Next() {
@@ -145,6 +149,9 @@ func (r *Repository) SearchByName(userID int, query string) ([]Subject, error) {
 			return nil, err
 		}
 		result = append(result, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

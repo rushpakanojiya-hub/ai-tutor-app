@@ -63,6 +63,12 @@ func (r *Repository) GetSubjectProgress(userID, subjectID int) (*SubjectProgress
 		}
 		sp.CompletedLessonIDs = append(sp.CompletedLessonIDs, id)
 	}
+	// BUG FIX: was missing a rows.Err() check - a connection error mid-
+	// iteration would silently under-report completed lessons instead of
+	// surfacing as an error.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	sp.CompletedLessons = len(sp.CompletedLessonIDs)
 
 	if sp.TotalLessons > 0 {

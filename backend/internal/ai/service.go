@@ -79,12 +79,20 @@ func (s *Service) subjectName(subjectID *int) string {
 //
 // QA fix ("Roll back failed AI messages" / "Preserve chat consistency"):
 // the student's message used to be saved to the DB BEFORE calling Groq,
-// with no cleanup if that call then failed - leaving a permanently
-// orphaned question with no reply sitting in the conversation. If Groq
-// fails now, the just-saved user message is deleted so the session's
-// history stays consistent (every stored user message has a reply);
-// the caller sees the original error and the message text is still in
-// their input box to retry, unchanged from before.
+// with no cleanup if that call then failed. If Groq fails, the just-saved
+// user message is deleted so the session's history stays consistent.
+//
+// BUG FIX (this pass): after a SUCCESSFUL (and billed) Groq call, saving
+// the assistant's reply (AddMessage) or touching the session
+// (TouchSession) could still fail on a transient DB hiccup - and the
+// previous code treated that as a hard failure, returning an error and
+// discarding the reply entirely. The student would see "something went
+// wrong" despite the AI Tutor having already generated a perfectly good
+// answer (that Groq call cost real money). These two persistence steps
+// are now best-effort: failures are logged, but the reply is still
+// returned to the caller either way. Worst case, that one reply doesn't
+// appear in the session's history on reload - much better than losing it
+// outright.
 func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatResponse, error) {
 	sessionID, err := s.resolveSession(userID, req)
 	if err != nil {
@@ -118,10 +126,10 @@ func (s *Service) Chat(ctx context.Context, userID int, req ChatRequest) (*ChatR
 	}
 
 	if _, err := s.repo.AddMessage(sessionID, "assistant", reply); err != nil {
-		return nil, err
+		log.Printf("[ai] failed to persist assistant reply for session %d (reply still returned to caller): %v", sessionID, err)
 	}
 	if err := s.repo.TouchSession(sessionID); err != nil {
-		return nil, err
+		log.Printf("[ai] failed to touch session %d after reply (non-fatal): %v", sessionID, err)
 	}
 	_ = s.streakSvc.RecordActivity(userID) // best-effort
 

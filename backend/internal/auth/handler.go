@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ai-tutor-backend/internal/middleware"
+	"ai-tutor-backend/pkg/logger"
 	"ai-tutor-backend/utils"
 )
 
@@ -50,6 +51,12 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup, authMiddleware gin.Han
 }
 
 // Register handles POST /api/auth/register (student self-registration).
+//
+// BUG FIX (info leak): non-validation failures (e.g. a real DB error)
+// used to be sent to the client verbatim via err.Error(). Only the two
+// expected, safe-to-show cases (validation, duplicate email) get a
+// specific message now; anything else is logged server-side and the
+// client gets a generic message.
 func (h *Handler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,11 +65,15 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	if err := h.service.Register(req); err != nil {
-		if errors.Is(err, ErrEmailAlreadyExists) {
+		switch {
+		case errors.Is(err, ErrEmailAlreadyExists):
 			utils.RespondError(c, http.StatusConflict, "Email already registered")
-			return
+		case isValidationError(err):
+			utils.RespondError(c, http.StatusBadRequest, err.Error())
+		default:
+			logger.Error("auth: Register failed", err)
+			utils.RespondError(c, http.StatusInternalServerError, "Registration failed, please try again")
 		}
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -71,6 +82,8 @@ func (h *Handler) Register(c *gin.Context) {
 
 // ApplyAsTeacher handles POST /api/auth/teacher/apply. The account is
 // created as "pending" - it cannot log in until an admin approves it.
+//
+// BUG FIX (info leak): same as Register above.
 func (h *Handler) ApplyAsTeacher(c *gin.Context) {
 	var req TeacherApplyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,15 +92,34 @@ func (h *Handler) ApplyAsTeacher(c *gin.Context) {
 	}
 
 	if err := h.service.RegisterTeacher(req); err != nil {
-		if errors.Is(err, ErrEmailAlreadyExists) {
+		switch {
+		case errors.Is(err, ErrEmailAlreadyExists):
 			utils.RespondError(c, http.StatusConflict, "Email already registered")
-			return
+		case isValidationError(err):
+			utils.RespondError(c, http.StatusBadRequest, err.Error())
+		default:
+			logger.Error("auth: ApplyAsTeacher failed", err)
+			utils.RespondError(c, http.StatusInternalServerError, "Application submission failed, please try again")
 		}
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	utils.RespondSuccess(c, http.StatusCreated, "Application submitted successfully. Waiting for verification.", nil)
+}
+
+// isValidationError reports whether err is one of the plain input-validation
+// errors Service.Register/RegisterTeacher return directly (errors.New(...)
+// for invalid email format / weak password) - these are safe to show
+// verbatim since they only ever describe the client's own input, never
+// internal state. Anything else (DB errors, hashing errors, etc.) is not
+// safe to show and is logged instead.
+func isValidationError(err error) bool {
+	switch err.Error() {
+	case "invalid email format", "password must be at least 6 characters":
+		return true
+	default:
+		return false
+	}
 }
 
 // Login handles POST /api/auth/login (shared by students and teachers -
@@ -113,6 +145,7 @@ func (h *Handler) Login(c *gin.Context) {
 		case errors.Is(err, ErrAccountBlocked):
 			utils.RespondError(c, http.StatusForbidden, "Your account has been blocked")
 		default:
+			logger.Error("auth: Login failed", err)
 			utils.RespondError(c, http.StatusInternalServerError, "Something went wrong, please try again")
 		}
 		return
@@ -127,7 +160,12 @@ func (h *Handler) Profile(c *gin.Context) {
 
 	user, err := h.service.Profile(userID)
 	if err != nil {
-		utils.RespondError(c, http.StatusNotFound, "User not found")
+		if errors.Is(err, ErrUserNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "User not found")
+			return
+		}
+		logger.Error("auth: Profile lookup failed", err)
+		utils.RespondError(c, http.StatusInternalServerError, "Failed to load profile")
 		return
 	}
 
@@ -145,6 +183,7 @@ func (h *Handler) Profile(c *gin.Context) {
 func (h *Handler) ListPendingTeachers(c *gin.Context) {
 	list, err := h.service.ListPendingTeachers()
 	if err != nil {
+		logger.Error("auth: ListPendingTeachers failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load pending teachers")
 		return
 	}
@@ -171,6 +210,7 @@ func (h *Handler) ApproveTeacher(c *gin.Context) {
 			utils.RespondError(c, http.StatusNotFound, "User not found")
 			return
 		}
+		logger.Error("auth: ApproveTeacher failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to approve teacher")
 		return
 	}
@@ -195,6 +235,7 @@ func (h *Handler) RejectTeacher(c *gin.Context) {
 			utils.RespondError(c, http.StatusNotFound, "User not found")
 			return
 		}
+		logger.Error("auth: RejectTeacher failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to reject teacher")
 		return
 	}

@@ -1,7 +1,9 @@
 package quiz
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"sort"
 	"time"
@@ -50,6 +52,89 @@ func (r *Repository) GetLessonSubjectID(lessonID int) (int, error) {
 	err := r.db.QueryRow(`SELECT subject_id FROM lessons WHERE id = $1`, lessonID).Scan(&subjectID)
 	return subjectID, err
 }
+
+// --- Generated-quiz answer-key session store ------------------------------
+//
+// Fixes audit CRITICAL #3: freeform quizzes previously had no server-side
+// record of the correct answers, so grading trusted whatever "correct_*"
+// fields the client echoed back. GenerateQuiz now persists the real,
+// AI-generated answer key here (keyed by an unguessable session ID) at
+// /generate time, and SubmitFreeformAttempt reads it back at grading time -
+// the client is never trusted with the answer key before it submits.
+
+// SaveGeneratedQuiz persists the full (answer-key-included) question set
+// for a freeform quiz, returning a new unguessable session ID.
+func (r *Repository) SaveGeneratedQuiz(userID int, topic string, subjectID *int, questions []FreeformQuestion, ttl time.Duration) (string, error) {
+	sessionID, err := newSessionID()
+	if err != nil {
+		return "", err
+	}
+
+	payload, err := json.Marshal(questions)
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now().UTC()
+	const q = `
+		INSERT INTO quiz_generated_sessions (id, user_id, topic, subject_id, questions_json, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	if _, err := r.db.Exec(q, sessionID, userID, topic, subjectID, payload, now, now.Add(ttl)); err != nil {
+		return "", err
+	}
+	return sessionID, nil
+}
+
+// GetGeneratedQuiz looks up a previously-generated answer key by session
+// ID, verifying it belongs to userID and hasn't expired. Returns
+// ErrQuizSessionNotFound (never a raw sql.ErrNoRows or DB detail) for any
+// "doesn't exist / wrong user / expired" case, so a caller can't use the
+// error to probe for valid session IDs belonging to other users.
+func (r *Repository) GetGeneratedQuiz(sessionID string, userID int) ([]FreeformQuestion, *int, error) {
+	const q = `
+		SELECT subject_id, questions_json
+		FROM quiz_generated_sessions
+		WHERE id = $1 AND user_id = $2 AND expires_at > now()`
+
+	var subjectID sql.NullInt64
+	var raw []byte
+	err := r.db.QueryRow(q, sessionID, userID).Scan(&subjectID, &raw)
+	if err == sql.ErrNoRows {
+		return nil, nil, ErrQuizSessionNotFound
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var questions []FreeformQuestion
+	if err := json.Unmarshal(raw, &questions); err != nil {
+		return nil, nil, err
+	}
+
+	var subjectIDPtr *int
+	if subjectID.Valid {
+		v := int(subjectID.Int64)
+		subjectIDPtr = &v
+	}
+	return questions, subjectIDPtr, nil
+}
+
+// DeleteGeneratedQuiz removes a session after it's been graded (single-use)
+// so the same server-held answer key can't be resubmitted repeatedly.
+func (r *Repository) DeleteGeneratedQuiz(sessionID string) error {
+	_, err := r.db.Exec(`DELETE FROM quiz_generated_sessions WHERE id = $1`, sessionID)
+	return err
+}
+
+func newSessionID() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// --- Attempts --------------------------------------------------------------
 
 // nullableJSON marshals a slice to JSON, returning nil (-> SQL NULL) for
 // an empty/nil slice instead of the literal string "[]", so optional
@@ -120,7 +205,7 @@ func (r *Repository) SaveAttempt(userID int, lessonID, subjectID *int, topic str
 			questionType = QuestionTypeSingleMCQ
 		}
 
-		_, err = tx.Exec(`
+		res, err := tx.Exec(`
 			INSERT INTO quiz_attempt_answers
 				(attempt_id, question_index, question_type, question_text, options,
 				 selected_option, correct_option, correct_options, selected_options,
@@ -132,6 +217,9 @@ func (r *Repository) SaveAttempt(userID int, lessonID, subjectID *int, topic str
 		)
 		if err != nil {
 			return 0, err
+		}
+		if n, rerr := res.RowsAffected(); rerr == nil && n == 0 {
+			return 0, sql.ErrNoRows
 		}
 	}
 
@@ -175,6 +263,9 @@ func (r *Repository) ListAttempts(userID, lessonID int) ([]Attempt, error) {
 			return nil, err
 		}
 		result = append(result, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -235,12 +326,19 @@ func (r *Repository) GetAttemptWithAnswers(userID, attemptID int) (*AttemptWithA
 
 		answers = append(answers, ans)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return &AttemptWithAnswers{Attempt: a, Answers: answers}, nil
 }
 
 // GetAnalytics computes overall + per-subject accuracy from real attempt
-// data - nothing here is fabricated or hardcoded.
+// data - nothing here is fabricated or hardcoded. Date bucketing for the
+// weekly trend is computed in Go using UTC (rather than relying solely on
+// Postgres's CURRENT_DATE, which follows the session/server timezone) so
+// "today" is consistent with the rest of the app's UTC-based logic (streaks,
+// etc).
 func (r *Repository) GetAnalytics(userID int) (*Analytics, error) {
 	analytics := &Analytics{}
 
@@ -281,19 +379,29 @@ func (r *Repository) GetAnalytics(userID int) (*Analytics, error) {
 			analytics.FailedCount++
 		}
 	}
+	if err := scoreRows.Err(); err != nil {
+		scoreRows.Close()
+		return nil, err
+	}
 	scoreRows.Close()
 	if scoreCount > 0 {
 		analytics.AverageScore = float64(scoreSum) / float64(scoreCount)
 	}
 	analytics.HighestScore = highest
 
-	// Weekly trend: one accuracy point per day for the last 7 days.
+	// Weekly trend: one accuracy point per day for the last 7 UTC days.
+	// The 7-day window boundary is computed here in Go (UTC) and passed as
+	// a bound parameter, instead of letting Postgres's CURRENT_DATE (which
+	// follows the DB server's configured timezone) decide what "today" is.
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	windowStart := today.AddDate(0, 0, -6)
+
 	trendRows, err := r.db.Query(`
-		SELECT created_at::date, COUNT(*), COALESCE(SUM(correct_count), 0), COALESCE(SUM(total_questions), 0)
+		SELECT (created_at AT TIME ZONE 'utc')::date AS day, COUNT(*), COALESCE(SUM(correct_count), 0), COALESCE(SUM(total_questions), 0)
 		FROM quiz_attempts
-		WHERE user_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '6 days'
-		GROUP BY created_at::date
-		ORDER BY created_at::date`, userID)
+		WHERE user_id = $1 AND created_at >= $2
+		GROUP BY day
+		ORDER BY day`, userID, windowStart)
 	if err != nil {
 		return nil, err
 	}
@@ -312,9 +420,12 @@ func (r *Repository) GetAnalytics(userID int) (*Analytics, error) {
 		key := date.Format("2006-01-02")
 		dayMap[key] = DayAccuracy{Date: key, Accuracy: acc, Attempts: attempts}
 	}
+	if err := trendRows.Err(); err != nil {
+		trendRows.Close()
+		return nil, err
+	}
 	trendRows.Close()
 
-	today := time.Now()
 	for i := 6; i >= 0; i-- {
 		day := today.AddDate(0, 0, -i)
 		key := day.Format("2006-01-02")
@@ -350,6 +461,9 @@ func (r *Repository) GetAnalytics(userID int) (*Analytics, error) {
 		if sa.Accuracy < 60 {
 			analytics.WeakTopics = append(analytics.WeakTopics, sa)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	sort.Slice(analytics.WeakTopics, func(i, j int) bool {

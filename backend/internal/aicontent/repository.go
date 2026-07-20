@@ -21,7 +21,7 @@ func NewRepository(db *sql.DB) *Repository {
 const selectColumns = `id, lesson_id, explanation, summary, key_points, examples, practice_questions, quiz_json, generated_at`
 
 // FindByLessonID returns the AI content for a lesson, or ErrNotFound if
-// none has been generated for it (older lessons may not have any yet â€”
+// none has been generated for it (older lessons may not have any yet Ã¢â‚¬â€
 // the Flutter side shows "AI content not available yet" in that case
 // rather than an error).
 func (r *Repository) FindByLessonID(lessonID int) (*AIContent, error) {
@@ -42,7 +42,7 @@ func (r *Repository) FindByLessonID(lessonID int) (*AIContent, error) {
 }
 
 // SearchByText does a case-insensitive partial match against explanation
-// and summary, returning the matching lesson_ids â€” used by the global
+// and summary, returning the matching lesson_ids Ã¢â‚¬â€ used by the global
 // search endpoint (Feature 6, extended per this request to search AI content).
 func (r *Repository) SearchByText(query string) ([]int, error) {
 	rows, err := r.db.Query(
@@ -61,6 +61,12 @@ func (r *Repository) SearchByText(query string) ([]int, error) {
 			return nil, err
 		}
 		ids = append(ids, id)
+	}
+	// BUG FIX: was missing a rows.Err() check - a connection error mid-
+	// iteration would silently truncate search results instead of
+	// surfacing as an error.
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return ids, nil
 }

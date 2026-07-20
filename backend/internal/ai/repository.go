@@ -54,6 +54,8 @@ func (r *Repository) FindSessionByID(userID, sessionID int) (*ChatSession, error
 }
 
 // ListSessions returns every session for a user, most recently updated first.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) ListSessions(userID int) ([]ChatSession, error) {
 	query := `SELECT id, user_id, subject_id, title, created_at, updated_at FROM ai_chat_sessions WHERE user_id = $1 ORDER BY updated_at DESC`
 	rows, err := r.db.Query(query, userID)
@@ -75,13 +77,30 @@ func (r *Repository) ListSessions(userID int) ([]ChatSession, error) {
 		}
 		result = append(result, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 // DeleteSession removes a session (and its messages, via ON DELETE CASCADE).
+//
+// BUG FIX: didn't check RowsAffected - deleting someone else's session id
+// (or a nonexistent one) matched 0 rows but still reported success to the
+// caller, silently doing nothing instead of surfacing "not found".
 func (r *Repository) DeleteSession(userID, sessionID int) error {
-	_, err := r.db.Exec(`DELETE FROM ai_chat_sessions WHERE id = $1 AND user_id = $2`, sessionID, userID)
-	return err
+	res, err := r.db.Exec(`DELETE FROM ai_chat_sessions WHERE id = $1 AND user_id = $2`, sessionID, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
 }
 
 // AddMessage inserts a message into a session.
@@ -93,6 +112,8 @@ func (r *Repository) AddMessage(sessionID int, role, message string) (int, error
 }
 
 // ListMessages returns every message in a session, oldest first.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) ListMessages(sessionID int) ([]ChatMessage, error) {
 	query := `SELECT id, session_id, role, message, created_at FROM ai_chat_messages WHERE session_id = $1 ORDER BY id`
 	rows, err := r.db.Query(query, sessionID)
@@ -109,6 +130,9 @@ func (r *Repository) ListMessages(sessionID int) ([]ChatMessage, error) {
 		}
 		result = append(result, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -116,6 +140,11 @@ func (r *Repository) ListMessages(sessionID int) ([]ChatMessage, error) {
 // session, oldest-first - used to build the context window sent to Groq
 // ("load last 10 messages"). Call this BEFORE saving the current turn's
 // user message, so the returned history doesn't include it yet.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop - a
+// connection error mid-iteration would silently truncate the context
+// window sent to Groq instead of surfacing as an error, which could make
+// the AI Tutor "forget" earlier turns without any error being reported.
 func (r *Repository) RecentMessages(sessionID, limit int) ([]ChatMessage, error) {
 	query := `
 		SELECT id, session_id, role, message, created_at FROM (
@@ -140,6 +169,9 @@ func (r *Repository) RecentMessages(sessionID, limit int) ([]ChatMessage, error)
 			return nil, err
 		}
 		result = append(result, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

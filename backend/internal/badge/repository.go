@@ -18,6 +18,8 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 // ListAllBadges returns the 7 fixed badge definitions.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) ListAllBadges() ([]Badge, error) {
 	rows, err := r.db.Query(`SELECT id, key, name, description, icon_key FROM badges ORDER BY id`)
 	if err != nil {
@@ -33,11 +35,16 @@ func (r *Repository) ListAllBadges() ([]Badge, error) {
 		}
 		result = append(result, b)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 // EarnedByStudent returns key -> earned_at for every badge the student
 // already has.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) EarnedByStudent(studentID int) (map[string]time.Time, error) {
 	rows, err := r.db.Query(`
 		SELECT b.key, sb.earned_at
@@ -57,6 +64,9 @@ func (r *Repository) EarnedByStudent(studentID int) (map[string]time.Time, error
 			return nil, err
 		}
 		result[key] = earnedAt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

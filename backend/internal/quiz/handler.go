@@ -1,13 +1,13 @@
 package quiz
 
 import (
-	"log"
 	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"ai-tutor-backend/pkg/logger"
 	"ai-tutor-backend/utils"
 )
 
@@ -45,6 +45,7 @@ func (h *Handler) SubmitLessonAttempt(c *gin.Context) {
 		case errors.Is(err, ErrAnswerCountMismatch):
 			utils.RespondError(c, http.StatusBadRequest, "Number of answers does not match the quiz")
 		default:
+			logger.Error("quiz: SubmitLessonAttempt failed", err)
 			utils.RespondError(c, http.StatusInternalServerError, "Failed to submit quiz attempt")
 		}
 		return
@@ -53,10 +54,17 @@ func (h *Handler) SubmitLessonAttempt(c *gin.Context) {
 }
 
 // SubmitFreeformAttempt handles POST /api/quiz/freeform/attempt.
+//
+// SECURITY: grading happens server-side against the answer key stored at
+// /generate time (see Service.SubmitFreeformAttempt) - the request body's
+// own correct_option/correct_options/correct_text fields are never
+// trusted. quiz_session_id is required; requests missing/using an
+// unknown/expired one are rejected rather than silently trusting the
+// client's echoed answer key.
 func (h *Handler) SubmitFreeformAttempt(c *gin.Context) {
 	var req SubmitFreeformAttemptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.RespondError(c, http.StatusBadRequest, "topic and questions are required")
+		utils.RespondError(c, http.StatusBadRequest, "quiz_session_id, topic, and questions are required")
 		return
 	}
 
@@ -64,8 +72,15 @@ func (h *Handler) SubmitFreeformAttempt(c *gin.Context) {
 
 	result, err := h.service.SubmitFreeformAttempt(userID, req)
 	if err != nil {
-		log.Printf("[DEBUG] SubmitFreeformAttempt error: %v", err)
-		utils.RespondError(c, http.StatusInternalServerError, "Failed to submit quiz attempt")
+		switch {
+		case errors.Is(err, ErrQuizSessionNotFound):
+			utils.RespondError(c, http.StatusBadRequest, "This quiz session is invalid or has expired. Please generate a new quiz.")
+		case errors.Is(err, ErrAnswerCountMismatch):
+			utils.RespondError(c, http.StatusBadRequest, "Number of answers does not match the generated quiz")
+		default:
+			logger.Error("quiz: SubmitFreeformAttempt failed", err)
+			utils.RespondError(c, http.StatusInternalServerError, "Failed to submit quiz attempt")
+		}
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Attempt recorded", result)
@@ -78,6 +93,7 @@ func (h *Handler) ListAttempts(c *gin.Context) {
 
 	list, err := h.service.ListAttempts(userID, lessonID)
 	if err != nil {
+		logger.Error("quiz: ListAttempts failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load quiz history")
 		return
 	}
@@ -108,6 +124,7 @@ func (h *Handler) GetAnalytics(c *gin.Context) {
 
 	result, err := h.service.GetAnalytics(userID)
 	if err != nil {
+		logger.Error("quiz: GetAnalytics failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load analytics")
 		return
 	}
@@ -115,6 +132,12 @@ func (h *Handler) GetAnalytics(c *gin.Context) {
 }
 
 // GenerateQuiz handles POST /api/quiz/generate.
+//
+// Response shape change (security-driven, see model.go GenerateQuizResponse):
+// "data" is now {"quiz_session_id": "...", "questions": [...]} instead of a
+// bare questions array, and each question's correct_option/correct_options/
+// correct_text/explanation are stripped. The Flutter client must store
+// quiz_session_id and send it back in SubmitFreeformAttemptRequest.
 func (h *Handler) GenerateQuiz(c *gin.Context) {
 	var req GenerateQuizRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -122,10 +145,16 @@ func (h *Handler) GenerateQuiz(c *gin.Context) {
 		return
 	}
 
-	questions, err := h.service.GenerateQuiz(c.Request.Context(), req)
+	userID := c.GetInt("user_id")
+
+	sessionID, questions, err := h.service.GenerateQuiz(c.Request.Context(), userID, req)
 	if err != nil {
+		logger.Error("quiz: GenerateQuiz failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to generate quiz. Please try again.")
 		return
 	}
-	utils.RespondSuccess(c, http.StatusOK, "Quiz generated", questions)
+	utils.RespondSuccess(c, http.StatusOK, "Quiz generated", GenerateQuizResponse{
+		QuizSessionID: sessionID,
+		Questions:     questions,
+	})
 }

@@ -142,7 +142,24 @@ func cleanJSONFence(raw string) string {
 
 // --- Student: submission + AI evaluation ---
 
+// SaveDraft persists a student's in-progress answer.
+//
+// BUG FIX: this used to call UpsertDraft directly with no check at all -
+// unlike Submit (below), which correctly requires the assignment to be
+// published before accepting anything. A student could save draft text
+// against an assignment that was still in draft (not yet visible to
+// them through any normal listing, but guessable/bookmarkable by id),
+// already closed, or archived. Now mirrors Submit's gate. (UpsertDraft
+// also independently guards against the already-submitted case via its
+// own RowsAffected check - see repository.go.)
 func (s *Service) SaveDraft(assignmentID, studentID int, text string) error {
+	a, err := s.repo.GetByID(assignmentID)
+	if err != nil {
+		return err
+	}
+	if a.Status != StatusPublished {
+		return ErrAssignmentNotOpen
+	}
 	return s.repo.UpsertDraft(assignmentID, studentID, text)
 }
 

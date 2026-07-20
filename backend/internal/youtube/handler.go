@@ -1,10 +1,13 @@
 package youtube
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+
+	"ai-tutor-backend/pkg/logger"
 )
 
 type Handler struct {
@@ -21,7 +24,7 @@ func NewHandler(service *Service) *Handler {
 //
 //	youtube.RegisterRoutes(api, youtubeHandler, authMiddleware)
 //
-// authMiddleware is your existing JWT middleware — this package does not
+// authMiddleware is your existing JWT middleware â€” this package does not
 // implement or modify auth. Note: this adds routes UNDER the existing
 // "/lessons" URL space (/api/lessons/:id/videos) but does not touch or
 // re-register the lessons package's own routes/handler.
@@ -50,7 +53,15 @@ func (h *Handler) GetLessonVideos(c *gin.Context) {
 
 	videos, err := h.service.GetVideosForLesson(c.Request.Context(), lessonID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch videos", "details": err.Error()})
+		if errors.Is(err, ErrLessonNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "lesson not found"})
+			return
+		}
+		// SECURITY: never forward err.Error() to the client - the underlying
+		// YouTube client error can (rarely) still carry request context.
+		// Full detail goes to the server log only.
+		logger.Error("youtube: failed to fetch lesson videos", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch videos"})
 		return
 	}
 
@@ -67,7 +78,15 @@ func (h *Handler) SearchVideos(c *gin.Context) {
 
 	videos, err := h.service.SearchVideos(c.Request.Context(), q)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "search failed", "details": err.Error()})
+		if errors.Is(err, ErrEmptyQuery) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing q parameter"})
+			return
+		}
+		// SECURITY: this is the exact endpoint the audit flagged (critical #2)
+		// as leaking the YouTube API key via "details": err.Error(). Never
+		// forward the raw error to the client - log it server-side instead.
+		logger.Error("youtube: search failed", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "search failed"})
 		return
 	}
 
@@ -76,8 +95,8 @@ func (h *Handler) SearchVideos(c *gin.Context) {
 
 // SaveVideoProgress handles POST /api/lessons/:id/videos/progress
 // Expects the authenticated user id to be set on the context by your
-// existing auth middleware under the key "userID" (adjust if your
-// middleware uses a different key).
+// existing auth middleware under the key "user_id" (set by
+// middleware.AuthMiddleware from the JWT claims).
 func (h *Handler) SaveVideoProgress(c *gin.Context) {
 	lessonID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -102,18 +121,20 @@ func (h *Handler) SaveVideoProgress(c *gin.Context) {
 	case uint64:
 		userID = int64(v)
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user id type in context"})
+		logger.Error("youtube: unexpected user_id type in context", nil)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
 
 	var req VideoProgressRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
 
 	if err := h.service.RecordProgress(c.Request.Context(), userID, lessonID, req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save progress", "details": err.Error()})
+		logger.Error("youtube: failed to save video progress", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save progress"})
 		return
 	}
 

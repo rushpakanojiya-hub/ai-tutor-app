@@ -6,8 +6,40 @@ package streak
 
 import (
 	"database/sql"
+	"log"
 	"time"
 )
+
+// BUG FIX (timezone mismatch - audit-flagged, highest-risk file):
+// every "today"/"this week"/"last N days" calculation here used to mix
+// two different, independently-configured clocks: Go's time.Now()
+// (whatever timezone the app process's container happens to be running
+// in - typically UTC by default) on one side, and Postgres's CURRENT_DATE
+// (whatever timezone the DB session happens to be configured with) on
+// the other. If those two didn't agree - or either one didn't match this
+// app's actual (India-based) users - "today" could disagree by hours,
+// breaking streak continuity right around midnight and giving a wrong
+// current/longest streak or a weekly activity graph shifted by a day.
+// istLocation makes the timezone explicit and identical on both the Go
+// side (todayIST) and the SQL side (the "AT TIME ZONE 'Asia/Kolkata'"
+// queries below), so the two can never silently disagree again. If your
+// users are in a different timezone, change both consistently.
+var istLocation = mustLoadIST()
+
+func mustLoadIST() *time.Location {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		log.Printf("[streak] failed to load Asia/Kolkata timezone, falling back to UTC: %v", err)
+		return time.UTC
+	}
+	return loc
+}
+
+// todayIST returns today's date (midnight) in the app's canonical
+// timezone, replacing the previous ambient time.Now() calls.
+func todayIST() time.Time {
+	return truncateToDate(time.Now().In(istLocation))
+}
 
 type Repository struct {
 	db *sql.DB
@@ -17,12 +49,12 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// RecordActivity marks today as an active day for userID. Idempotent -
-// safe to call many times in the same day.
+// RecordActivity marks today (in IST) as an active day for userID.
+// Idempotent - safe to call many times in the same day.
 func (r *Repository) RecordActivity(userID int) error {
 	_, err := r.db.Exec(`
 		INSERT INTO user_activity_days (user_id, activity_date)
-		VALUES ($1, CURRENT_DATE)
+		VALUES ($1, (now() AT TIME ZONE 'Asia/Kolkata')::date)
 		ON CONFLICT (user_id, activity_date) DO NOTHING`, userID)
 	return err
 }
@@ -60,7 +92,7 @@ func (r *Repository) GetCurrentStreak(userID int) (int, error) {
 		return 0, nil
 	}
 
-	today := truncateToDate(time.Now())
+	today := todayIST()
 	daysSinceRecent := int(today.Sub(dates[0]).Hours() / 24)
 	if daysSinceRecent > 1 {
 		return 0, nil
@@ -106,12 +138,12 @@ func (r *Repository) GetLongestStreak(userID int) (int, error) {
 }
 
 // GetActiveDaysThisWeek returns how many distinct days (0-7) the user has
-// been active since the start of the current calendar week.
+// been active since the start of the current calendar week (IST).
 func (r *Repository) GetActiveDaysThisWeek(userID int) (int, error) {
 	var count int
 	err := r.db.QueryRow(`
 		SELECT COUNT(*) FROM user_activity_days
-		WHERE user_id = $1 AND activity_date >= date_trunc('week', CURRENT_DATE)`, userID,
+		WHERE user_id = $1 AND activity_date >= date_trunc('week', (now() AT TIME ZONE 'Asia/Kolkata')::date)`, userID,
 	).Scan(&count)
 	return count, err
 }
@@ -122,7 +154,7 @@ func (r *Repository) GetActiveDaysThisWeek(userID int) (int, error) {
 func (r *Repository) GetWeeklyActivity(userID int) ([]bool, error) {
 	rows, err := r.db.Query(`
 		SELECT activity_date FROM user_activity_days
-		WHERE user_id = $1 AND activity_date >= CURRENT_DATE - INTERVAL '6 days'`, userID)
+		WHERE user_id = $1 AND activity_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '6 days'`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,9 +168,12 @@ func (r *Repository) GetWeeklyActivity(userID int) ([]bool, error) {
 		}
 		activeDates[d.Format("2006-01-02")] = true
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	result := make([]bool, 7)
-	today := truncateToDate(time.Now())
+	today := todayIST()
 	for i := 0; i < 7; i++ {
 		day := today.AddDate(0, 0, -6+i)
 		result[i] = activeDates[day.Format("2006-01-02")]
@@ -151,7 +186,7 @@ func (r *Repository) GetWeeklyActivity(userID int) ([]bool, error) {
 func (r *Repository) GetActivityHeatmap(userID, days int) ([]HeatmapDay, error) {
 	rows, err := r.db.Query(`
 		SELECT activity_date FROM user_activity_days
-		WHERE user_id = $1 AND activity_date >= CURRENT_DATE - ($2 || ' days')::interval`, userID, days-1)
+		WHERE user_id = $1 AND activity_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - ($2 || ' days')::interval`, userID, days-1)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +200,11 @@ func (r *Repository) GetActivityHeatmap(userID, days int) ([]HeatmapDay, error) 
 		}
 		activeDates[d.Format("2006-01-02")] = true
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	today := truncateToDate(time.Now())
+	today := todayIST()
 	result := make([]HeatmapDay, days)
 	for i := 0; i < days; i++ {
 		day := today.AddDate(0, 0, -(days-1)+i)
@@ -227,7 +265,7 @@ func (r *Repository) GetCurrentStreakWithStartDate(userID int) (int, time.Time, 
 		return 0, time.Time{}, nil
 	}
 
-	today := truncateToDate(time.Now())
+	today := todayIST()
 	daysSinceRecent := int(today.Sub(dates[0]).Hours() / 24)
 	if daysSinceRecent > 1 {
 		return 0, time.Time{}, nil

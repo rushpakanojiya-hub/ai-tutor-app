@@ -2,8 +2,20 @@ package youtube
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log"
+	"strings"
 )
+
+// ErrLessonNotFound is returned when the requested lesson doesn't exist,
+// so the handler can map it to 404 instead of a generic 500.
+var ErrLessonNotFound = errors.New("lesson not found")
+
+// ErrEmptyQuery is returned when a search query is empty after trimming.
+var ErrEmptyQuery = errors.New("search query must not be empty")
+
+const maxSearchQueryLen = 200
 
 // Service orchestrates: read lesson -> resolve query -> check cache ->
 // call YouTube API -> cache -> return.
@@ -21,6 +33,9 @@ func NewService(repo *Repository, client *Client) *Service {
 func (s *Service) GetVideosForLesson(ctx context.Context, lessonID int64) ([]YoutubeVideo, error) {
 	lesson, err := s.repo.GetLesson(ctx, lessonID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrLessonNotFound
+		}
 		return nil, err
 	}
 
@@ -60,11 +75,9 @@ func (s *Service) GetVideosForLesson(ctx context.Context, lessonID int64) ([]You
 
 	if len(videos) == 0 {
 		videos = []YoutubeVideo{}
-	} else if err := s.repo.SaveCache(ctx, lessonID, query, videos); err != nil {
-		// Only cache non-empty results for the full 24h TTL - caching an
-		// empty result would "lock in" a transient miss (a bad query, an
-		// API hiccup, temporary no matches) for a full day, hiding videos
-		// that would have been found on a retry a few minutes later.
+	}
+
+	if err := s.repo.SaveCache(ctx, lessonID, query, videos); err != nil {
 		log.Printf("youtube: failed to write cache for lesson %d: %v", lessonID, err)
 	}
 
@@ -72,11 +85,27 @@ func (s *Service) GetVideosForLesson(ctx context.Context, lessonID int64) ([]You
 }
 
 // SearchVideos powers the generic GET /api/videos/search?q= endpoint.
+// The query is trimmed and length-capped before it's ever sent to the
+// YouTube API - both to avoid wasted quota on garbage input and to keep
+// an abusive/oversized query out of upstream request logs.
 func (s *Service) SearchVideos(ctx context.Context, q string) ([]YoutubeVideo, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, ErrEmptyQuery
+	}
+	if len(q) > maxSearchQueryLen {
+		q = q[:maxSearchQueryLen]
+	}
 	return s.client.Search(ctx, q)
 }
 
 // RecordProgress saves a user's watch progress for a video within a lesson.
 func (s *Service) RecordProgress(ctx context.Context, userID, lessonID int64, req VideoProgressRequest) error {
+	if strings.TrimSpace(req.VideoID) == "" {
+		return errors.New("video_id is required")
+	}
+	if req.WatchedSeconds < 0 {
+		return errors.New("watched_seconds must not be negative")
+	}
 	return s.repo.UpsertProgress(ctx, userID, lessonID, req)
 }

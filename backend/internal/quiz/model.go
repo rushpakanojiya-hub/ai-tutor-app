@@ -72,8 +72,14 @@ type SubmitLessonAttemptRequest struct {
 	TimeTakenSeconds int   `json:"time_taken_seconds"`
 }
 
-// FreeformQuestion is one AI-generated question returned by /generate.
-// Which fields are populated depends on QuestionType.
+// FreeformQuestion is one AI-generated question. Internally (as stored in
+// quiz_generated_sessions) it carries the full answer key. When returned
+// to the client from /generate, CorrectOption/CorrectOptions/CorrectText/
+// Explanation MUST be stripped first (see Handler.GenerateQuiz) - these
+// four fields together ARE the answer key, and sending them to the client
+// before the quiz is attempted is what let a tampered client score 100%
+// (audit CRITICAL #3). Hint is safe to send upfront; Explanation is not,
+// since it typically states the correct answer outright.
 type FreeformQuestion struct {
 	QuestionType    string   `json:"question_type"`
 	Question        string   `json:"question"`
@@ -86,13 +92,39 @@ type FreeformQuestion struct {
 	DifficultyScore int      `json:"difficulty_score,omitempty"`
 }
 
-// FreeformAnswered is one question + the student's answer, sent back to
-// /freeform/attempt for scoring and storage. The client already has the
-// full answer key from /generate (there's no server-stored quiz bank for
-// freeform quizzes), so it echoes the question data back alongside the answer.
+// ForClient returns a copy with the answer-key fields stripped, safe to
+// send to the client before the quiz has been attempted.
+func (q FreeformQuestion) ForClient() FreeformQuestion {
+	q.CorrectOption = nil
+	q.CorrectOptions = nil
+	q.CorrectText = ""
+	q.Explanation = ""
+	return q
+}
+
+// GenerateQuizResponse is the response body for POST /api/quiz/generate.
+// QuizSessionID must be sent back unchanged in SubmitFreeformAttemptRequest
+// so the server can grade against the answer key it stored at generation
+// time, instead of trusting whatever the client echoes back.
+type GenerateQuizResponse struct {
+	QuizSessionID string             `json:"quiz_session_id"`
+	Questions     []FreeformQuestion `json:"questions"`
+}
+
+// FreeformAnswered is one question index + the student's answer, sent back
+// to /freeform/attempt for scoring and storage.
+//
+// SECURITY: any question_type/question/options/correct_option/
+// correct_options/correct_text/hint/explanation/difficulty_score fields a
+// client sends here are IGNORED for grading. They exist only for backward
+// JSON compatibility with older payload shapes. Grading always reads the
+// authoritative question (including the real answer key) back from the
+// quiz_generated_sessions row identified by QuizSessionID on the parent
+// request - never from this struct. Only SelectedOption/SelectedOptions/
+// SubmittedText (the student's own input) are trusted from the client.
 type FreeformAnswered struct {
-	QuestionType    string   `json:"question_type"`
-	Question        string   `json:"question"`
+	QuestionType    string   `json:"question_type,omitempty"`
+	Question        string   `json:"question,omitempty"`
 	Options         []string `json:"options,omitempty"`
 	CorrectOption   *int     `json:"correct_option,omitempty"`
 	CorrectOptions  []int    `json:"correct_options,omitempty"`
@@ -106,7 +138,14 @@ type FreeformAnswered struct {
 }
 
 // SubmitFreeformAttemptRequest is the body for POST /api/quiz/freeform/attempt.
+//
+// QuizSessionID (returned by /generate as quiz_session_id) is now required:
+// it's how the server locates the real, server-held answer key to grade
+// against. This is an intentional, security-driven contract change - the
+// Flutter client must be updated to (a) store quiz_session_id from the
+// /generate response and (b) send it back here.
 type SubmitFreeformAttemptRequest struct {
+	QuizSessionID    string             `json:"quiz_session_id" binding:"required"`
 	SubjectID        *int               `json:"subject_id"`
 	Topic            string             `json:"topic" binding:"required"`
 	TimeTakenSeconds int                `json:"time_taken_seconds"`

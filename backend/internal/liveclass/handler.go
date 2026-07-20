@@ -70,7 +70,11 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 func (h *Handler) Cancel(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
 	teacherID := c.GetInt("user_id")
 	if err := h.service.Cancel(id, teacherID); err != nil {
 		respondForError(c, err, "Failed to cancel class")
@@ -80,7 +84,11 @@ func (h *Handler) Cancel(c *gin.Context) {
 }
 
 func (h *Handler) MarkCompleted(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid class id")
+		return
+	}
 	teacherID := c.GetInt("user_id")
 	if err := h.service.MarkCompleted(id, teacherID); err != nil {
 		respondForError(c, err, "Failed to update class")

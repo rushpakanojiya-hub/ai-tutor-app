@@ -36,6 +36,8 @@ func scanLesson(row interface{ Scan(...any) error }) (Lesson, error) {
 }
 
 // FindBySubjectID returns every lesson for a subject, in display order.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) FindBySubjectID(subjectID int) ([]Lesson, error) {
 	query := `SELECT ` + selectColumns + ` FROM lessons WHERE subject_id = $1 ORDER BY order_number, id`
 	rows, err := r.db.Query(query, subjectID)
@@ -51,6 +53,9 @@ func (r *Repository) FindBySubjectID(subjectID int) ([]Lesson, error) {
 			return nil, err
 		}
 		result = append(result, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -101,6 +106,12 @@ func (r *Repository) SearchByTitle(query string) ([]Lesson, error) {
 			return nil, err
 		}
 		result = append(result, l)
+	}
+	// BUG FIX: was missing a rows.Err() check - a connection error mid-
+	// iteration would silently truncate search results instead of
+	// surfacing as an error.
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -164,23 +175,46 @@ func (r *Repository) Reorder(items []ReorderItem) error {
 	return tx.Commit()
 }
 
+// BUG FIX: didn't check RowsAffected. If lessonID doesn't exist (or was
+// deleted between the upload starting and finishing), the Cloudinary
+// upload still succeeded (wasting storage on an orphaned file) while
+// this UPDATE silently matched 0 rows - the handler then reported
+// "Video uploaded" with a URL attached to nothing.
 func (r *Repository) SetVideoURL(id int, url string) error {
 	// Direct file uploads always set video_source back to "upload" -
 	// this is what distinguishes an uploaded file from a pasted
 	// YouTube URL (set via Update) when the player decides how to
 	// render the lesson's video.
-	_, err := r.db.Exec(`UPDATE lessons SET video_url = $1, video_source = 'upload' WHERE id = $2`, url, id)
-	return err
+	res, err := r.db.Exec(`UPDATE lessons SET video_url = $1, video_source = 'upload' WHERE id = $2`, url, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrLessonNotFound
+	}
+	return nil
 }
 
 func (r *Repository) SetPDFURL(id int, url string) error {
-	_, err := r.db.Exec(`UPDATE lessons SET pdf_url = $1 WHERE id = $2`, url, id)
-	return err
+	res, err := r.db.Exec(`UPDATE lessons SET pdf_url = $1 WHERE id = $2`, url, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrLessonNotFound
+	}
+	return nil
 }
 
 func (r *Repository) SetAssignmentURL(id int, url string) error {
-	_, err := r.db.Exec(`UPDATE lessons SET assignment_url = $1 WHERE id = $2`, url, id)
-	return err
+	res, err := r.db.Exec(`UPDATE lessons SET assignment_url = $1 WHERE id = $2`, url, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrLessonNotFound
+	}
+	return nil
 }
 
 // --- Lesson Resource Management (additive) ---

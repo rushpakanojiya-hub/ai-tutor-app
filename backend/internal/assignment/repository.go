@@ -12,6 +12,15 @@ var ErrForbidden = errors.New("you don't have permission to do that")
 var ErrCannotDelete = errors.New("published assignments must be archived before they can be deleted")
 var ErrHasSubmissions = errors.New("cannot unpublish an assignment that already has submissions")
 
+// ErrInvalidDate is returned when start_date/due_date isn't empty but
+// also isn't a valid ISO8601/RFC3339 timestamp.
+//
+// BUG FIX: parseOptionalTime used to swallow a parse failure by silently
+// returning nil (treated as "no date given"). A teacher who mistyped a
+// due date would have it silently vanish with no error - the assignment
+// would just quietly save with no due date at all.
+var ErrInvalidDate = errors.New("start_date/due_date must be a valid ISO8601 timestamp")
+
 type Repository struct {
 	db *sql.DB
 }
@@ -20,18 +29,36 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func parseOptionalTime(s string) *time.Time {
+func parseOptionalTime(s string) (*time.Time, error) {
 	if s == "" {
-		return nil
+		return nil, nil
 	}
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return nil
+		return nil, ErrInvalidDate
 	}
-	return &t
+	return &t, nil
+}
+
+func parseOptionalTimePtr(s *string) (*time.Time, error) {
+	if s == nil {
+		return nil, nil
+	}
+	return parseOptionalTime(*s)
 }
 
 func (r *Repository) CreateAssignment(teacherID int, req CreateAssignmentRequest) (int, error) {
+	// BUG FIX: validate dates BEFORE opening a transaction - fail fast
+	// with a clear error instead of silently dropping a mistyped date.
+	startDate, err := parseOptionalTime(req.StartDate)
+	if err != nil {
+		return 0, err
+	}
+	dueDate, err := parseOptionalTime(req.DueDate)
+	if err != nil {
+		return 0, err
+	}
+
 	tx, err := r.db.Begin()
 	if err != nil {
 		return 0, err
@@ -50,7 +77,7 @@ func (r *Repository) CreateAssignment(teacherID int, req CreateAssignmentRequest
 		RETURNING id`,
 		teacherID, req.Title, req.Description, req.Instructions, difficulty,
 		nullIfZeroInt(req.EstimatedMinutes), maxMarksOrDefault(req.MaxMarks), nullIfZeroInt(req.PassingMarks),
-		parseOptionalTime(req.StartDate), parseOptionalTime(req.DueDate), StatusDraft,
+		startDate, dueDate, StatusDraft,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -105,7 +132,17 @@ func (r *Repository) UpdateAssignment(assignmentID, teacherID int, req UpdateAss
 		return err
 	}
 
-	_, err := r.db.Exec(`
+	// BUG FIX: same silent-date-drop issue as CreateAssignment above.
+	startDate, err := parseOptionalTimePtr(req.StartDate)
+	if err != nil {
+		return err
+	}
+	dueDate, err := parseOptionalTimePtr(req.DueDate)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(`
 		UPDATE assignments SET
 			title = COALESCE($1, title),
 			description = COALESCE($2, description),
@@ -120,16 +157,9 @@ func (r *Repository) UpdateAssignment(assignmentID, teacherID int, req UpdateAss
 		WHERE id = $10`,
 		req.Title, req.Description, req.Instructions, req.Difficulty,
 		req.EstimatedMinutes, req.MaxMarks, req.PassingMarks,
-		parseOptionalTimePtr(req.StartDate), parseOptionalTimePtr(req.DueDate), assignmentID,
+		startDate, dueDate, assignmentID,
 	)
 	return err
-}
-
-func parseOptionalTimePtr(s *string) *time.Time {
-	if s == nil {
-		return nil
-	}
-	return parseOptionalTime(*s)
 }
 
 func (r *Repository) DeleteAssignment(assignmentID, teacherID int) error {
@@ -302,6 +332,7 @@ func (r *Repository) GetTargetSubjectID(assignmentID int) (int, error) {
 	return subjectID, err
 }
 
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) GetEnrolledStudentIDs(subjectID int) ([]int, error) {
 	rows, err := r.db.Query(`SELECT student_id FROM subject_enrollments WHERE subject_id = $1`, subjectID)
 	if err != nil {
@@ -317,6 +348,9 @@ func (r *Repository) GetEnrolledStudentIDs(subjectID int) ([]int, error) {
 		}
 		ids = append(ids, id)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return ids, nil
 }
 
@@ -326,6 +360,12 @@ func (r *Repository) GetSubmissionStudentID(submissionID int) (int, error) {
 	return studentID, err
 }
 
+// BUG FIX: the per-assignment "what's my submission status" lookup used
+// to discard its error entirely (`_ = r.db.QueryRow(...).Scan(...)`) - any
+// failure other than "no rows" (e.g. a dropped connection mid-loop) was
+// silently swallowed, showing the student an empty/blank status instead
+// of a real error. sql.ErrNoRows is still the expected/normal case
+// (no submission yet) and is not an error here.
 func (r *Repository) ListForStudent(studentID int) ([]Assignment, error) {
 	rows, err := r.db.Query(assignmentSelect+`
 		WHERE t.target_type = 'subject' AND a.status IN ('published', 'closed')
@@ -342,8 +382,11 @@ func (r *Repository) ListForStudent(studentID int) ([]Assignment, error) {
 
 	for i := range assignments {
 		var status sql.NullString
-		_ = r.db.QueryRow(`SELECT status FROM assignment_submissions WHERE assignment_id = $1 AND student_id = $2`,
+		err := r.db.QueryRow(`SELECT status FROM assignment_submissions WHERE assignment_id = $1 AND student_id = $2`,
 			assignments[i].ID, studentID).Scan(&status)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
 		assignments[i].MySubmissionStatus = status.String
 	}
 
@@ -364,8 +407,17 @@ func scanAssignmentRows(rows *sql.Rows) ([]Assignment, error) {
 
 // --- Submissions ---
 
+// UpsertDraft saves/updates a student's in-progress draft.
+//
+// BUG FIX: didn't check RowsAffected. The UPDATE half of this upsert is
+// guarded by "WHERE assignment_submissions.status = 'draft'" - so once a
+// submission has moved past draft (submitted/evaluated/returned), the
+// UPDATE branch silently matches 0 rows and the whole statement still
+// reports success. A student re-opening an already-submitted assignment
+// and typing in the draft box would see "saved" while nothing was
+// actually written. Returns ErrAssignmentNotOpen in that case instead.
 func (r *Repository) UpsertDraft(assignmentID, studentID int, text string) error {
-	_, err := r.db.Exec(`
+	res, err := r.db.Exec(`
 		INSERT INTO assignment_submissions (assignment_id, student_id, submission_text, status)
 		VALUES ($1, $2, $3, 'draft')
 		ON CONFLICT (assignment_id, student_id) DO UPDATE SET
@@ -374,7 +426,17 @@ func (r *Repository) UpsertDraft(assignmentID, studentID int, text string) error
 		WHERE assignment_submissions.status = 'draft'`,
 		assignmentID, studentID, text,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrAssignmentNotOpen
+	}
+	return nil
 }
 
 func (r *Repository) SubmitFinal(assignmentID, studentID int, text string) (int, error) {
@@ -423,6 +485,7 @@ func scanSubmissionWithEval(r *Repository, row *sql.Row) (*Submission, error) {
 	return &s, nil
 }
 
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) ListSubmissionsForAssignment(assignmentID, teacherID int) ([]Submission, error) {
 	if err := r.checkOwnership(assignmentID, teacherID); err != nil {
 		return nil, err
@@ -451,11 +514,23 @@ func (r *Repository) ListSubmissionsForAssignment(assignmentID, teacherID int) (
 		}
 		result = append(result, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 // --- Evaluations ---
 
+// SaveAIEvaluation writes the AI's evaluation and marks the submission
+// 'evaluated'.
+//
+// BUG FIX: these were two independent Exec calls with no transaction. If
+// the second (marking the submission 'evaluated') failed after the first
+// succeeded, the evaluation row would exist but the submission would be
+// stuck showing 'submitted' forever - an inconsistent state with no way
+// to recover except manual DB intervention. Now atomic: either both
+// happen, or neither does.
 func (r *Repository) SaveAIEvaluation(submissionID, aiScore, maxScore int, strengths, weaknesses, missingConcepts []string, suggestions string) error {
 	strengthsJSON, _ := json.Marshal(strengths)
 	weaknessesJSON, _ := json.Marshal(weaknesses)
@@ -466,7 +541,13 @@ func (r *Repository) SaveAIEvaluation(submissionID, aiScore, maxScore int, stren
 		percentage = (float64(aiScore) / float64(maxScore)) * 100
 	}
 
-	_, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
 		INSERT INTO assignment_evaluations (submission_id, ai_score, max_score, percentage, strengths, weaknesses, missing_concepts, suggestions, teacher_feedback, evaluated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '', now())
 		ON CONFLICT (submission_id) DO UPDATE SET
@@ -479,8 +560,11 @@ func (r *Repository) SaveAIEvaluation(submissionID, aiScore, maxScore int, stren
 		return err
 	}
 
-	_, err = r.db.Exec(`UPDATE assignment_submissions SET status = 'evaluated', updated_at = now() WHERE id = $1`, submissionID)
-	return err
+	if _, err := tx.Exec(`UPDATE assignment_submissions SET status = 'evaluated', updated_at = now() WHERE id = $1`, submissionID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // GetEvaluationBySubmission - fixed: teacher_feedback (and a couple other
@@ -513,6 +597,13 @@ func (r *Repository) GetEvaluationBySubmission(submissionID int) (*Evaluation, e
 	return &e, nil
 }
 
+// SaveTeacherReview records a teacher's override score/feedback and moves
+// the submission to 'returned'.
+//
+// BUG FIX: same missing-transaction issue as SaveAIEvaluation above -
+// these were two independent Exec calls; a failure on the second left
+// the evaluation marked reviewed but the submission stuck on its old
+// status.
 func (r *Repository) SaveTeacherReview(submissionID, teacherID int, overrideScore *int, feedback string) error {
 	var assignmentID int
 	if err := r.db.QueryRow(`SELECT assignment_id FROM assignment_submissions WHERE id = $1`, submissionID).Scan(&assignmentID); err != nil {
@@ -525,7 +616,13 @@ func (r *Repository) SaveTeacherReview(submissionID, teacherID int, overrideScor
 		return err
 	}
 
-	_, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
 		UPDATE assignment_evaluations SET
 			teacher_override_score = $1, teacher_feedback = $2, reviewed_by_teacher = true, reviewed_at = now()
 		WHERE submission_id = $3`,
@@ -534,8 +631,11 @@ func (r *Repository) SaveTeacherReview(submissionID, teacherID int, overrideScor
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`UPDATE assignment_submissions SET status = 'returned', updated_at = now() WHERE id = $1`, submissionID)
-	return err
+	if _, err := tx.Exec(`UPDATE assignment_submissions SET status = 'returned', updated_at = now() WHERE id = $1`, submissionID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // --- Analytics ---

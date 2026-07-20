@@ -1,3 +1,14 @@
+# apply_resource_fixes.ps1
+# Run from your backend project root (e.g. C:\Users\ABC\Desktop\ai_tutor_app\backend)
+# Writes: resource module fixes (rows.Err() + RowsAffected checks).
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+$root = Get-Location
+Write-Host "Applying resource module fixes in $root" -ForegroundColor Cyan
+
+# --- internal/resource/repository.go ---
+New-Item -ItemType Directory -Force -Path (Join-Path $root "internal/resource") | Out-Null
+$content_internal_resource_repository_go = @'
 package resource
 
 import (
@@ -80,3 +91,14 @@ func (r *Repository) Delete(id int) error {
 	}
 	return nil
 }
+
+'@
+[System.IO.File]::WriteAllText((Join-Path $root "internal/resource/repository.go"), $content_internal_resource_repository_go, (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "  wrote internal/resource/repository.go" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "Done. Next steps:" -ForegroundColor Yellow
+Write-Host "  1. go build ./... to sanity check"
+Write-Host "  2. cd .. ; docker compose build --no-cache backend"
+Write-Host "  3. docker compose up -d --force-recreate backend"
+Write-Host "  4. docker logs ai_tutor_backend --tail 15"

@@ -1,4 +1,4 @@
-// AI Tutor Backend ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Day 2 (Course & Learning Management added)
+// AI Tutor Backend ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Day 2 (Course & Learning Management added)
 // Boots the Gin server, connects to PostgreSQL, and wires up all modules
 // using Clean Architecture (handler -> service -> repository -> model).
 package main
@@ -14,25 +14,25 @@ import (
 	"ai-tutor-backend/internal/ai"
 	"ai-tutor-backend/internal/aicontent"
 	"ai-tutor-backend/internal/assignment"
-	"ai-tutor-backend/internal/badge"
-	"ai-tutor-backend/internal/leaderboard"
 	"ai-tutor-backend/internal/auth"
+	"ai-tutor-backend/internal/badge"
 	"ai-tutor-backend/internal/categories"
 	"ai-tutor-backend/internal/certificate"
+	"ai-tutor-backend/internal/cloudinary"
 	"ai-tutor-backend/internal/enrollment"
+	"ai-tutor-backend/internal/leaderboard"
+	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/liveclass"
 	"ai-tutor-backend/internal/livekit"
-	"ai-tutor-backend/internal/cloudinary"
-	"ai-tutor-backend/internal/resource"
-	"ai-tutor-backend/internal/lessons"
 	"ai-tutor-backend/internal/middleware"
 	"ai-tutor-backend/internal/notes"
 	"ai-tutor-backend/internal/notification"
 	"ai-tutor-backend/internal/progress"
 	"ai-tutor-backend/internal/quiz"
-	"ai-tutor-backend/internal/streak"
 	"ai-tutor-backend/internal/recommendations"
+	"ai-tutor-backend/internal/resource"
 	"ai-tutor-backend/internal/search"
+	"ai-tutor-backend/internal/streak"
 	"ai-tutor-backend/internal/subjects"
 	"ai-tutor-backend/internal/users"
 	"ai-tutor-backend/internal/xp"
@@ -48,11 +48,32 @@ func main() {
 	defer db.Close()
 
 	router := gin.Default()
+
+	// BUG FIX (security): Gin's default is to trust EVERY proxy, which the
+	// startup log even warns about ("You trusted all proxies, this is NOT
+	// safe"). Since c.ClientIP() (used by AuthRateLimitMiddleware for
+	// login/register brute-force protection) honors the X-Forwarded-For
+	// header when a proxy is trusted, "trust all" means any client can set
+	// their own X-Forwarded-For to a different fake IP on every request
+	// and get a fresh rate-limit bucket each time - completely bypassing
+	// the brute-force protection the audit asked for.
+	//
+	// Elastic Beanstalk's own nginx reverse proxy sits in front of this
+	// container on the loopback interface, so trusting loopback lets it
+	// keep working normally while refusing to trust anything else (i.e.
+	// an X-Forwarded-For coming directly from the internet is ignored).
+	// If your deployment puts a different proxy/load balancer directly in
+	// front of this container (not through EB's local nginx), replace
+	// these with that proxy's actual IP range instead.
+	if err := router.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		logger.Error("failed to set trusted proxies", err)
+	}
+
 	router.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
-        router.Use(middleware.ContentTypeFix())
+	router.Use(middleware.ContentTypeFix())
 
 	// Serves lesson PDF notes from backend/static/notes/*.pdf as
-	// http://<host>:<port>/static/notes/<file>.pdf ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â real, self-hosted
+	// http://<host>:<port>/static/notes/<file>.pdf ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â real, self-hosted
 	// content instead of random third-party URLs (see migration 000014).
 	router.Static("/static", "./static")
 
@@ -161,7 +182,7 @@ func main() {
 	recommendationsService := recommendations.NewService(recommendationsRepo)
 	recommendationsHandler := recommendations.NewHandler(recommendationsService)
 
-	// search reuses the categories/subjects/lessons/aicontent repositories directly ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
+	// search reuses the categories/subjects/lessons/aicontent repositories directly ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â
 	// no separate "search" table exists, it's a fan-out query.
 	searchService := search.NewService(categoriesRepo, subjectsRepo, lessonsRepo, aiContentRepo)
 	searchHandler := search.NewHandler(searchService)
@@ -223,7 +244,7 @@ func main() {
 	resource.RegisterRoutes(api, resourceHandler, authMiddleware, middleware.RequireTeacher())
 	notification.RegisterRoutes(api, notificationHandler, authMiddleware)
 
-	// Role-gated routes are still intentionally absent (see Day 1 notes) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
+	// Role-gated routes are still intentionally absent (see Day 1 notes) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â
 	// when an admin dashboard exists, the POST endpoints above (create
 	// category/subject/lesson/note) should switch to
 	// middleware.RequireAdmin() instead of the plain authMiddleware.

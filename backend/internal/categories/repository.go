@@ -83,6 +83,12 @@ func (r *Repository) SearchByName(query string) ([]Category, error) {
 		c.Icon = icon.String
 		result = append(result, c)
 	}
+	// BUG FIX: was missing a rows.Err() check - a connection error mid-
+	// iteration would silently truncate search results instead of
+	// surfacing as an error.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

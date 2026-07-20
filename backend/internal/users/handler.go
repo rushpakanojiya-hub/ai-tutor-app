@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ai-tutor-backend/internal/middleware"
+	"ai-tutor-backend/pkg/logger"
 	"ai-tutor-backend/utils"
 )
 
@@ -18,6 +20,13 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// BUG FIX (authorization): the admin routes below previously relied ONLY
+// on a manual `if role != "admin"` check inside each handler function -
+// functionally equivalent today, but inconsistent with every other
+// admin-gated route in the app (which uses middleware.RequireAdmin()),
+// and a single missed check in a future handler would silently expose
+// the route. middleware.RequireAdmin() is now the actual gate; it's
+// defense-in-depth for a future engineer to be unable to forget.
 func (h *Handler) RegisterRoutes(router *gin.RouterGroup, authMiddleware gin.HandlerFunc) {
 	usersGroup := router.Group("/users")
 	usersGroup.Use(authMiddleware)
@@ -27,7 +36,7 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup, authMiddleware gin.Han
 	}
 
 	adminGroup := router.Group("/admin/students")
-	adminGroup.Use(authMiddleware)
+	adminGroup.Use(authMiddleware, middleware.RequireAdmin())
 	{
 		adminGroup.GET("", h.ListStudents)
 		adminGroup.PUT("/:id/class-section", h.AssignClassSection)
@@ -42,16 +51,25 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		return
 	}
 	if err := h.service.UpdateProfile(userID, req); err != nil {
-		if errors.Is(err, ErrEmailAlreadyExists) {
+		switch {
+		case errors.Is(err, ErrEmailAlreadyExists):
 			utils.RespondError(c, http.StatusConflict, "This email is already in use")
-			return
+		case errors.Is(err, ErrUserNotFound):
+			utils.RespondError(c, http.StatusNotFound, "User not found")
+		case err.Error() == "invalid email format":
+			utils.RespondError(c, http.StatusBadRequest, "Invalid email format")
+		default:
+			logger.Error("users: UpdateProfile failed", err)
+			utils.RespondError(c, http.StatusInternalServerError, "Failed to update profile")
 		}
-		utils.RespondError(c, http.StatusInternalServerError, "Failed to update profile")
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Profile updated", nil)
 }
 
+// BUG FIX (info leak): non-validation failures used to be sent to the
+// client verbatim via err.Error() - a real DB error here could leak
+// internal details. Only known-safe cases get a specific message now.
 func (h *Handler) ChangePassword(c *gin.Context) {
 	userID := c.GetInt("user_id")
 	var req ChangePasswordRequest
@@ -60,25 +78,28 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 	if err := h.service.ChangePassword(userID, req); err != nil {
-		if errors.Is(err, ErrIncorrectCurrentPassword) {
+		switch {
+		case errors.Is(err, ErrIncorrectCurrentPassword):
 			utils.RespondError(c, http.StatusUnauthorized, "Current password is incorrect")
-			return
+		case errors.Is(err, ErrUserNotFound):
+			utils.RespondError(c, http.StatusNotFound, "User not found")
+		case err.Error() == "new password must be at least 6 characters":
+			utils.RespondError(c, http.StatusBadRequest, err.Error())
+		default:
+			logger.Error("users: ChangePassword failed", err)
+			utils.RespondError(c, http.StatusInternalServerError, "Failed to change password")
 		}
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Password changed successfully", nil)
 }
 
-// ListStudents handles GET /api/admin/students - admin-only.
+// ListStudents handles GET /api/admin/students - admin-only
+// (enforced by middleware.RequireAdmin(), see RegisterRoutes).
 func (h *Handler) ListStudents(c *gin.Context) {
-	role := c.GetString("role")
-	if role != "admin" {
-		utils.RespondError(c, http.StatusForbidden, "Only admins can view the student list")
-		return
-	}
 	students, err := h.service.ListStudents()
 	if err != nil {
+		logger.Error("users: ListStudents failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to load students")
 		return
 	}
@@ -86,14 +107,8 @@ func (h *Handler) ListStudents(c *gin.Context) {
 }
 
 // AssignClassSection handles PUT /api/admin/students/:id/class-section -
-// admin-only.
+// admin-only (enforced by middleware.RequireAdmin(), see RegisterRoutes).
 func (h *Handler) AssignClassSection(c *gin.Context) {
-	role := c.GetString("role")
-	if role != "admin" {
-		utils.RespondError(c, http.StatusForbidden, "Only admins can assign class/section")
-		return
-	}
-
 	studentID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		utils.RespondError(c, http.StatusBadRequest, "Invalid student id")
@@ -107,11 +122,15 @@ func (h *Handler) AssignClassSection(c *gin.Context) {
 	}
 
 	if err := h.service.AssignClassSection(studentID, req); err != nil {
-		if errors.Is(err, ErrNotAStudent) {
+		switch {
+		case errors.Is(err, ErrNotAStudent):
 			utils.RespondError(c, http.StatusBadRequest, "Class and section can only be assigned to students")
-			return
+		case errors.Is(err, ErrUserNotFound):
+			utils.RespondError(c, http.StatusNotFound, "Student not found")
+		default:
+			logger.Error("users: AssignClassSection failed", err)
+			utils.RespondError(c, http.StatusInternalServerError, "Failed to update class/section")
 		}
-		utils.RespondError(c, http.StatusInternalServerError, "Failed to update class/section")
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Class/section updated", nil)

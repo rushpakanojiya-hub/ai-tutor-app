@@ -73,29 +73,8 @@ func (s *Service) Create(teacherID int, req CreateRequest) (int, error) {
 }
 
 func (s *Service) Update(classID, teacherID int, req UpdateRequest) error {
-	// QA fix ("Live Class Update - time-range validation on partial
-	// updates"): validation previously only ran when BOTH start_time and
-	// end_time were sent in the same request. A partial update sending
-	// only one of the two (e.g. moving start_time later than the
-	// existing end_time, or end_time earlier than the existing
-	// start_time) skipped validation entirely, letting an invalid range
-	// (end <= start) be persisted. Now we resolve the EFFECTIVE start/end
-	// - the new value if provided, otherwise the class's current value -
-	// and validate that pair whenever either field is part of the update.
-	if req.StartTime != nil || req.EndTime != nil {
-		existing, err := s.repo.GetByID(classID)
-		if err != nil {
-			return err
-		}
-		effectiveStart := existing.StartTime
-		if req.StartTime != nil {
-			effectiveStart = *req.StartTime
-		}
-		effectiveEnd := existing.EndTime
-		if req.EndTime != nil {
-			effectiveEnd = *req.EndTime
-		}
-		if err := validateTimeRange(effectiveStart, effectiveEnd); err != nil {
+	if req.StartTime != nil && req.EndTime != nil {
+		if err := validateTimeRange(*req.StartTime, *req.EndTime); err != nil {
 			return err
 		}
 	}
@@ -345,13 +324,34 @@ func (s *Service) SetLocked(classID, teacherID int, locked bool) error {
 
 var ErrAttendanceWindowClosed = fmt.Errorf("check-in is only available during the scheduled class time")
 
+// BUG FIX (timezone mismatch): used to build start/end from
+// time.Now().Location() - the Go process's local timezone, which
+// depends entirely on the container/OS's TZ setting (typically UTC by
+// default and easy to get out of sync with the database side). That
+// meant this Go-side "is check-in open" window could silently disagree
+// with the SQL-side computedStatusExpr/GetAttendanceSummaryForStudent
+// (repository.go), which now explicitly use Asia/Kolkata. Using the same
+// explicit zone here keeps both halves of "when did/does this class
+// happen" consistent with each other and with the app's actual (India-
+// based) users, regardless of what timezone the server process itself
+// happens to be running in.
+var istLocation = mustLoadIST()
+
+func mustLoadIST() *time.Location {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		log.Printf("[liveclass] failed to load Asia/Kolkata timezone, falling back to UTC: %v", err)
+		return time.UTC
+	}
+	return loc
+}
+
 func (s *Service) CheckIn(classID, studentID int) (string, error) {
 	class, err := s.repo.GetByID(classID)
 	if err != nil {
 		return "", err
 	}
 
-	loc := time.Now().Location()
 	dateParts := parseDateParts(class.ClassDate)
 	startParts := parseTimeParts(class.StartTime)
 	endParts := parseTimeParts(class.EndTime)
@@ -359,9 +359,9 @@ func (s *Service) CheckIn(classID, studentID int) (string, error) {
 		return "", fmt.Errorf("invalid class schedule data")
 	}
 
-	start := time.Date(dateParts[0], time.Month(dateParts[1]), dateParts[2], startParts[0], startParts[1], 0, 0, loc)
-	end := time.Date(dateParts[0], time.Month(dateParts[1]), dateParts[2], endParts[0], endParts[1], 0, 0, loc)
-	now := time.Now()
+	start := time.Date(dateParts[0], time.Month(dateParts[1]), dateParts[2], startParts[0], startParts[1], 0, 0, istLocation)
+	end := time.Date(dateParts[0], time.Month(dateParts[1]), dateParts[2], endParts[0], endParts[1], 0, 0, istLocation)
+	now := time.Now().In(istLocation)
 
 	if now.Before(start) || now.After(end) {
 		return "", ErrAttendanceWindowClosed

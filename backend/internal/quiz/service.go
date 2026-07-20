@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"ai-tutor-backend/internal/ai"
 	"ai-tutor-backend/internal/badge"
@@ -21,6 +22,16 @@ var ErrNoQuizForLesson = errors.New("this lesson has no quiz yet")
 // ErrAnswerCountMismatch is returned when the submitted answers array
 // doesn't match the lesson's actual question count.
 var ErrAnswerCountMismatch = errors.New("answers count does not match question count")
+
+// ErrQuizSessionNotFound is returned when quiz_session_id doesn't match any
+// stored session for this user, or the session has expired. Deliberately
+// generic (doesn't distinguish "wrong user" from "expired" from "never
+// existed") so it can't be used to enumerate other users' session IDs.
+var ErrQuizSessionNotFound = errors.New("quiz session not found or expired")
+
+// generatedQuizTTL is how long a generated quiz's answer key is retained
+// server-side, waiting for the matching /freeform/attempt submission.
+const generatedQuizTTL = 2 * time.Hour
 
 var allQuestionTypes = []string{
 	QuestionTypeSingleMCQ, QuestionTypeMultipleMCQ, QuestionTypeTrueFalse,
@@ -99,17 +110,43 @@ func (s *Service) SubmitLessonAttempt(userID, lessonID int, req SubmitLessonAtte
 }
 
 // SubmitFreeformAttempt grades and persists an AI-generated quiz that
-// isn't tied to a specific lesson. Grading logic depends on each
-// question's type (there's no server-stored answer key for these - the
-// client already has it from /generate).
+// isn't tied to a specific lesson.
+//
+// SECURITY (fixes audit CRITICAL #3): grading is done ENTIRELY against the
+// server-held answer key fetched via req.QuizSessionID (persisted at
+// /generate time in quiz_generated_sessions). The client's own
+// question/correct_option/correct_options/correct_text/etc. fields in
+// req.Questions are never read for grading - only SelectedOption/
+// SelectedOptions/SubmittedText (the student's actual answer) are used.
+// This closes the "tampered client scores 100% and farms XP/badges/
+// certificates" hole, since a client can no longer supply its own answer
+// key.
 func (s *Service) SubmitFreeformAttempt(userID int, req SubmitFreeformAttemptRequest) (*AttemptWithAnswers, error) {
+	if strings.TrimSpace(req.QuizSessionID) == "" {
+		return nil, ErrQuizSessionNotFound
+	}
 	if len(req.Questions) == 0 {
 		return nil, errors.New("at least one question is required")
 	}
 
-	answers := make([]AttemptAnswer, len(req.Questions))
-	for i, q := range req.Questions {
-		qType := q.QuestionType
+	stored, storedSubjectID, err := s.repo.GetGeneratedQuiz(req.QuizSessionID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(req.Questions) != len(stored) {
+		return nil, ErrAnswerCountMismatch
+	}
+
+	subjectID := req.SubjectID
+	if subjectID == nil {
+		subjectID = storedSubjectID
+	}
+
+	answers := make([]AttemptAnswer, len(stored))
+	for i, authoritative := range stored {
+		client := req.Questions[i]
+
+		qType := authoritative.QuestionType
 		if qType == "" {
 			qType = QuestionTypeSingleMCQ
 		}
@@ -117,41 +154,50 @@ func (s *Service) SubmitFreeformAttempt(userID int, req SubmitFreeformAttemptReq
 		answer := AttemptAnswer{
 			QuestionIndex:   i,
 			QuestionType:    qType,
-			QuestionText:    q.Question,
-			Options:         q.Options,
-			CorrectOption:   q.CorrectOption,
-			CorrectOptions:  q.CorrectOptions,
-			CorrectText:     q.CorrectText,
-			Hint:            q.Hint,
-			Explanation:     q.Explanation,
-			DifficultyScore: q.DifficultyScore,
-			SelectedOption:  q.SelectedOption,
-			SelectedOptions: q.SelectedOptions,
-			SubmittedText:   q.SubmittedText,
+			QuestionText:    authoritative.Question,
+			Options:         authoritative.Options,
+			CorrectOption:   authoritative.CorrectOption,
+			CorrectOptions:  authoritative.CorrectOptions,
+			CorrectText:     authoritative.CorrectText,
+			Hint:            authoritative.Hint,
+			Explanation:     authoritative.Explanation,
+			DifficultyScore: authoritative.DifficultyScore,
+			// Only these three come from the client - the student's own input.
+			SelectedOption:  client.SelectedOption,
+			SelectedOptions: client.SelectedOptions,
+			SubmittedText:   client.SubmittedText,
 		}
 
 		switch qType {
 		case QuestionTypeMultipleMCQ:
-			answer.IsCorrect = intSetsEqual(q.SelectedOptions, q.CorrectOptions)
+			answer.IsCorrect = intSetsEqual(client.SelectedOptions, authoritative.CorrectOptions)
 		case QuestionTypeFillBlank, QuestionTypeShortAnswer:
-			answer.IsCorrect = normalizeAnswerText(q.SubmittedText) == normalizeAnswerText(q.CorrectText) && q.CorrectText != ""
+			answer.IsCorrect = authoritative.CorrectText != "" &&
+				normalizeAnswerText(client.SubmittedText) == normalizeAnswerText(authoritative.CorrectText)
 		default: // single_mcq, true_false
-			answer.IsCorrect = q.SelectedOption != nil && q.CorrectOption != nil && *q.SelectedOption == *q.CorrectOption
+			answer.IsCorrect = client.SelectedOption != nil && authoritative.CorrectOption != nil &&
+				*client.SelectedOption == *authoritative.CorrectOption
 		}
 
 		answers[i] = answer
 	}
 
-	attemptID, err := s.repo.SaveAttempt(userID, nil, req.SubjectID, req.Topic, req.TimeTakenSeconds, answers)
+	attemptID, err := s.repo.SaveAttempt(userID, nil, subjectID, req.Topic, req.TimeTakenSeconds, answers)
 	if err != nil {
 		return nil, err
 	}
+
+	// Single-use: consume the session so the same generated answer key
+	// can't be resubmitted repeatedly to farm XP/badges. Best-effort - a
+	// failure here shouldn't fail the (already-saved) attempt.
+	_ = s.repo.DeleteGeneratedQuiz(req.QuizSessionID)
+
 	_ = s.streakSvc.RecordActivity(userID) // best-effort
 	go s.badgeSvc.CheckAndAwardBadges(userID)
 	go s.xpSvc.AwardQuizCompletion(userID, attemptID)
 	go s.xpSvc.OnStudyActivity(userID)
-	if req.SubjectID != nil {
-		go s.certSvc.CheckAndGenerate(userID, *req.SubjectID)
+	if subjectID != nil {
+		go s.certSvc.CheckAndGenerate(userID, *subjectID)
 	}
 	return s.repo.GetAttemptWithAnswers(userID, attemptID)
 }
@@ -193,8 +239,10 @@ func (s *Service) GetAnalytics(userID int) (*Analytics, error) {
 
 // GenerateQuiz asks Groq for a fresh set of quiz questions on a topic,
 // mixing in whichever question types were requested (defaulting to
-// single_mcq only, so existing callers are unaffected).
-func (s *Service) GenerateQuiz(ctx context.Context, req GenerateQuizRequest) ([]FreeformQuestion, error) {
+// single_mcq only, so existing callers are unaffected), persists the full
+// answer key server-side keyed by a new session ID, and returns that
+// session ID alongside the CLIENT-SAFE (answer-key-stripped) questions.
+func (s *Service) GenerateQuiz(ctx context.Context, userID int, req GenerateQuizRequest) (string, []FreeformQuestion, error) {
 	numQuestions := req.NumQuestions
 	if numQuestions <= 0 {
 		numQuestions = 5
@@ -246,7 +294,7 @@ Rules:
 
 	raw, err := s.groqClient.Chat(ctx, messages)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	clean := strings.TrimSpace(raw)
@@ -257,7 +305,7 @@ Rules:
 
 	var questions []FreeformQuestion
 	if err := json.Unmarshal([]byte(clean), &questions); err != nil {
-		return nil, fmt.Errorf("invalid JSON from Groq: %w", err)
+		return "", nil, fmt.Errorf("invalid JSON from Groq: %w", err)
 	}
 
 	for i := range questions {
@@ -271,7 +319,17 @@ Rules:
 		}
 	}
 
-	return questions, nil
+	sessionID, err := s.repo.SaveGeneratedQuiz(userID, req.Topic, req.SubjectID, questions, generatedQuizTTL)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to persist quiz answer key: %w", err)
+	}
+
+	clientQuestions := make([]FreeformQuestion, len(questions))
+	for i, q := range questions {
+		clientQuestions[i] = q.ForClient()
+	}
+
+	return sessionID, clientQuestions, nil
 }
 
 func sanitizeQuestionTypes(requested []string) []string {

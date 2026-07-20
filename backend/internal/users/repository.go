@@ -8,9 +8,9 @@ import (
 )
 
 var ErrEmailAlreadyExists = errors.New("email already registered")
+var ErrUserNotFound = errors.New("user not found")
 
-// pqUniqueViolation is Postgres's SQLSTATE code for a unique-constraint
-// violation - same constant/pattern as auth/repository.go.
+// postgres unique_violation error code.
 const pqUniqueViolation = "23505"
 
 type Repository struct {
@@ -21,6 +21,11 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// ListAll returns every user (admin/debug use).
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop - a
+// connection error mid-iteration would silently return a truncated list
+// instead of an error.
 func (r *Repository) ListAll() ([]User, error) {
 	rows, err := r.db.Query(`SELECT id, name, email, role, created_at FROM users ORDER BY id`)
 	if err != nil {
@@ -36,28 +41,45 @@ func (r *Repository) ListAll() ([]User, error) {
 		}
 		result = append(result, u)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 func (r *Repository) UpdateName(id int, name string) error {
-	_, err := r.db.Exec(`UPDATE users SET name = $1 WHERE id = $2`, name, id)
-	return err
+	res, err := r.db.Exec(`UPDATE users SET name = $1 WHERE id = $2`, name, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
-// UpdateNameAndEmail updates a user's profile name/email.
+// UpdateNameAndEmail updates a user's name/email.
 //
-// QA fix ("TOCTOU on email uniqueness; raw 500 instead of translated
-// 409"): the previous version did a SELECT-then-UPDATE check - two
-// concurrent updates to the same new email could both pass the SELECT
-// before either UPDATE ran, and if the UPDATE itself then hit the DB's
-// UNIQUE constraint (users_email_unique_idx, migration 026), the raw
-// Postgres error propagated straight up as an unhandled 500 instead of
-// the intended "email already in use" conflict. Now the UPDATE is
-// attempted directly and a unique-violation is translated into
-// ErrEmailAlreadyExists - race-proof, since Postgres itself serializes
-// the conflicting updates and only lets one succeed.
+// BUG FIX (race condition): the previous version only did a SELECT-then-
+// UPDATE existence check for the new email - the exact
+// time-of-check-to-time-of-use gap already identified and fixed for
+// registration (see auth.Repository.CreateUser / migration 026's
+// users_email_unique_idx). Two concurrent profile updates to the same
+// new email could both pass the pre-check before either UPDATEs. The
+// pre-check is kept as a fast/friendly path, but the UPDATE's own
+// unique-constraint violation is now the actual guarantee, translated
+// into ErrEmailAlreadyExists - race-proof regardless of timing.
 func (r *Repository) UpdateNameAndEmail(id int, name, email string) error {
-	_, err := r.db.Exec(`UPDATE users SET name = $1, email = $2 WHERE id = $3`, name, email, id)
+	var existingID int
+	err := r.db.QueryRow(`SELECT id FROM users WHERE email = $1`, email).Scan(&existingID)
+	if err == nil && existingID != id {
+		return ErrEmailAlreadyExists
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	res, err := r.db.Exec(`UPDATE users SET name = $1, email = $2 WHERE id = $3`, name, email, id)
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
@@ -65,18 +87,30 @@ func (r *Repository) UpdateNameAndEmail(id int, name, email string) error {
 		}
 		return err
 	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrUserNotFound
+	}
 	return nil
 }
 
 func (r *Repository) GetPasswordHash(id int) (string, error) {
 	var hash string
 	err := r.db.QueryRow(`SELECT password_hash FROM users WHERE id = $1`, id).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return "", ErrUserNotFound
+	}
 	return hash, err
 }
 
 func (r *Repository) UpdatePasswordHash(id int, newHash string) error {
-	_, err := r.db.Exec(`UPDATE users SET password_hash = $1 WHERE id = $2`, newHash, id)
-	return err
+	res, err := r.db.Exec(`UPDATE users SET password_hash = $1 WHERE id = $2`, newHash, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 // --- Class/Section (admin-only, students-only, Leaderboard use only) ---
@@ -89,13 +123,22 @@ var ErrNotAStudent = errors.New("class and section can only be assigned to stude
 func (r *Repository) AssignClassSection(studentID int, class, section string) error {
 	var role string
 	if err := r.db.QueryRow(`SELECT role FROM users WHERE id = $1`, studentID).Scan(&role); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrUserNotFound
+		}
 		return err
 	}
 	if role != "student" {
 		return ErrNotAStudent
 	}
-	_, err := r.db.Exec(`UPDATE users SET class = $1, section = $2 WHERE id = $3`, class, section, studentID)
-	return err
+	res, err := r.db.Exec(`UPDATE users SET class = $1, section = $2 WHERE id = $3`, class, section, studentID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 // GetClassSection is used by the Leaderboard to enforce "students only

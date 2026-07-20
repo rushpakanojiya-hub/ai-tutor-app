@@ -1,6 +1,13 @@
 package notification
 
-import "database/sql"
+import (
+	"database/sql"
+	"errors"
+)
+
+// ErrNotificationNotFound is returned when a notification id doesn't
+// exist, or doesn't belong to the requesting user.
+var ErrNotificationNotFound = errors.New("notification not found")
 
 type Repository struct {
 	db *sql.DB
@@ -92,11 +99,32 @@ func (r *Repository) CountUnread(userID int) (int, error) {
 	return count, err
 }
 
+// MarkRead marks one notification as read, scoped to userID so a user
+// can't mark (or even discover the existence of) someone else's
+// notification by guessing an id.
+//
+// BUG FIX: didn't check RowsAffected - marking a nonexistent id, or one
+// belonging to a different user, matched 0 rows but still reported
+// success ("Marked as read") to the caller instead of surfacing that
+// nothing actually happened.
 func (r *Repository) MarkRead(id, userID int) error {
-	_, err := r.db.Exec(`UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2`, id, userID)
-	return err
+	res, err := r.db.Exec(`UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotificationNotFound
+	}
+	return nil
 }
 
+// MarkAllRead marks every unread notification as read. 0 rows affected
+// is a legitimate outcome here (nothing was unread) rather than an
+// error, unlike MarkRead above which targets one specific id.
 func (r *Repository) MarkAllRead(userID int) error {
 	_, err := r.db.Exec(`UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false`, userID)
 	return err

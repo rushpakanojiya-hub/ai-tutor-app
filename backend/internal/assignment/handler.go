@@ -30,6 +30,8 @@ func respondForServiceError(c *gin.Context, err error, fallbackMsg string) {
 		utils.RespondError(c, http.StatusConflict, "Cannot unpublish - students have already submitted. Close or Archive it instead.")
 	case errors.Is(err, ErrAssignmentNotOpen):
 		utils.RespondError(c, http.StatusConflict, "This assignment is no longer accepting submissions")
+	case errors.Is(err, ErrInvalidDate):
+		utils.RespondError(c, http.StatusBadRequest, "start_date/due_date must be a valid ISO8601 timestamp")
 	default:
 		utils.RespondError(c, http.StatusInternalServerError, fallbackMsg)
 	}
@@ -48,7 +50,7 @@ func (h *Handler) Create(c *gin.Context) {
 
 	id, err := h.service.CreateAssignment(teacherID, req)
 	if err != nil {
-		utils.RespondError(c, http.StatusInternalServerError, "Failed to create assignment")
+		respondForServiceError(c, err, "Failed to create assignment")
 		return
 	}
 	utils.RespondSuccess(c, http.StatusCreated, "Assignment created", gin.H{"id": id})
@@ -93,7 +95,11 @@ func (h *Handler) Delete(c *gin.Context) {
 
 // Publish handles POST /api/assignments/:id/publish.
 func (h *Handler) Publish(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid assignment id")
+		return
+	}
 	teacherID := c.GetInt("user_id")
 	if err := h.service.Publish(id, teacherID); err != nil {
 		respondForServiceError(c, err, "Failed to publish assignment")
@@ -104,7 +110,11 @@ func (h *Handler) Publish(c *gin.Context) {
 
 // Unpublish handles POST /api/assignments/:id/unpublish.
 func (h *Handler) Unpublish(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid assignment id")
+		return
+	}
 	teacherID := c.GetInt("user_id")
 	if err := h.service.Unpublish(id, teacherID); err != nil {
 		respondForServiceError(c, err, "Failed to unpublish assignment")
@@ -115,7 +125,11 @@ func (h *Handler) Unpublish(c *gin.Context) {
 
 // Close handles POST /api/assignments/:id/close.
 func (h *Handler) Close(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid assignment id")
+		return
+	}
 	teacherID := c.GetInt("user_id")
 	if err := h.service.Close(id, teacherID); err != nil {
 		respondForServiceError(c, err, "Failed to close assignment")
@@ -126,7 +140,11 @@ func (h *Handler) Close(c *gin.Context) {
 
 // Archive handles POST /api/assignments/:id/archive.
 func (h *Handler) Archive(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.RespondError(c, http.StatusBadRequest, "Invalid assignment id")
+		return
+	}
 	teacherID := c.GetInt("user_id")
 	if err := h.service.Archive(id, teacherID); err != nil {
 		respondForServiceError(c, err, "Failed to archive assignment")
@@ -233,7 +251,7 @@ func (h *Handler) SaveDraft(c *gin.Context) {
 	studentID := c.GetInt("user_id")
 
 	if err := h.service.SaveDraft(id, studentID, req.SubmissionText); err != nil {
-		utils.RespondError(c, http.StatusInternalServerError, "Failed to save draft")
+		respondForServiceError(c, err, "Failed to save draft")
 		return
 	}
 	utils.RespondSuccess(c, http.StatusOK, "Draft saved", nil)

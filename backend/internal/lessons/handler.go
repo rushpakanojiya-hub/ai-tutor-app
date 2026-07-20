@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ai-tutor-backend/internal/notes"
+	"ai-tutor-backend/pkg/logger"
 	"ai-tutor-backend/utils"
 )
 
@@ -80,11 +81,30 @@ func (h *Handler) Create(c *gin.Context) {
 
 	id, err := h.service.Create(req)
 	if err != nil {
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
+		if isLessonValidationError(err) {
+			utils.RespondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		logger.Error("lessons: Create failed", err)
+		utils.RespondError(c, http.StatusBadRequest, "Could not create lesson - check that the subject exists")
 		return
 	}
 
 	utils.RespondSuccess(c, http.StatusCreated, "Lesson created", gin.H{"id": id})
+}
+
+// isLessonValidationError reports whether err is one of the plain input-
+// validation errors Service.Create/Update return directly - these only
+// ever describe the client's own input and are safe to show verbatim.
+// Anything else (e.g. a foreign-key violation because subject_id doesn't
+// exist) is a real DB error and must not be echoed to the client.
+func isLessonValidationError(err error) bool {
+	switch err.Error() {
+	case "a valid subject_id is required", "lesson title is required":
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Admin Course Management (additive) ---
@@ -124,7 +144,12 @@ func (h *Handler) Update(c *gin.Context) {
 			utils.RespondError(c, http.StatusNotFound, "Lesson not found")
 			return
 		}
-		utils.RespondError(c, http.StatusBadRequest, err.Error())
+		if isLessonValidationError(err) {
+			utils.RespondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		logger.Error("lessons: Update failed", err)
+		utils.RespondError(c, http.StatusBadRequest, "Could not update lesson")
 		return
 	}
 	// Lesson Resource Management (additive): if this request touched
@@ -236,6 +261,11 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 	}
 	url, err := h.service.UploadVideo(id, fileBytes, filename)
 	if err != nil {
+		if errors.Is(err, ErrLessonNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "Lesson not found")
+			return
+		}
+		logger.Error("lessons: UploadVideo failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to upload video")
 		return
 	}
@@ -259,6 +289,11 @@ func (h *Handler) UploadPDF(c *gin.Context) {
 	}
 	url, err := h.service.UploadPDF(id, fileBytes, filename)
 	if err != nil {
+		if errors.Is(err, ErrLessonNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "Lesson not found")
+			return
+		}
+		logger.Error("lessons: UploadPDF failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to upload PDF")
 		return
 	}
@@ -306,6 +341,11 @@ func (h *Handler) UploadAssignment(c *gin.Context) {
 	}
 	url, err := h.service.UploadAssignment(id, fileBytes, filename)
 	if err != nil {
+		if errors.Is(err, ErrLessonNotFound) {
+			utils.RespondError(c, http.StatusNotFound, "Lesson not found")
+			return
+		}
+		logger.Error("lessons: UploadAssignment failed", err)
 		utils.RespondError(c, http.StatusInternalServerError, "Failed to upload assignment")
 		return
 	}

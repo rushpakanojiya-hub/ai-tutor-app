@@ -2,10 +2,29 @@ package xp
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"ai-tutor-backend/internal/streak"
 )
+
+// BUG FIX (timezone mismatch, matching the same class of bug fixed in
+// streak/repository.go): AwardDailyStudy used to key its dedup date off
+// time.Now() in the app process's ambient/container timezone. Since
+// streak's "today" is now explicitly Asia/Kolkata, using a different
+// zone here could mis-date the daily XP grant relative to the student's
+// actual day, or grant/deny it inconsistently with the streak that
+// triggered it. Kept consistent with streak's canonical timezone.
+var istLocation = mustLoadIST()
+
+func mustLoadIST() *time.Location {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		log.Printf("[xp] failed to load Asia/Kolkata timezone, falling back to UTC: %v", err)
+		return time.UTC
+	}
+	return loc
+}
 
 type Service struct {
 	repo       *Repository
@@ -52,7 +71,7 @@ func (s *Service) CheckAndAwardCourseCompletion(studentID, subjectID int) {
 // lesson). Deduped by calendar date, so a student doing several
 // activities the same day only gets this once.
 func (s *Service) AwardDailyStudy(studentID int) {
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().In(istLocation).Format("2006-01-02")
 	_ = s.repo.AwardXP(studentID, ActivityDailyStudy, fmt.Sprintf("daily-%s", today), XPDailyStudy, PointsDailyStudy)
 }
 

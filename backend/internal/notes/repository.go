@@ -13,6 +13,8 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 // FindByLessonID returns every note attached to a lesson.
+//
+// BUG FIX: was missing a rows.Err() check after the scan loop.
 func (r *Repository) FindByLessonID(lessonID int) ([]Note, error) {
 	query := `SELECT id, lesson_id, title, pdf_url, created_at FROM notes WHERE lesson_id = $1 ORDER BY id`
 	rows, err := r.db.Query(query, lessonID)
@@ -28,6 +30,9 @@ func (r *Repository) FindByLessonID(lessonID int) ([]Note, error) {
 			return nil, err
 		}
 		result = append(result, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

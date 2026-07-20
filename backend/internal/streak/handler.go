@@ -3,7 +3,6 @@ package streak
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -33,10 +32,11 @@ func (h *Handler) GetSummary(c *gin.Context) {
 // --- Learning Calendar month view (additive) ---
 
 // GetMonthCalendar handles GET /api/streak/calendar?year=2026&month=7.
-// Defaults to the current year/month if not provided.
+// Defaults to the current year/month (in IST, matching the rest of this
+// package - see repository.go's todayIST) if not provided.
 func (h *Handler) GetMonthCalendar(c *gin.Context) {
 	userID := c.GetInt("user_id")
-	now := time.Now()
+	now := todayIST()
 
 	year, err := strconv.Atoi(c.DefaultQuery("year", strconv.Itoa(now.Year())))
 	if err != nil {
