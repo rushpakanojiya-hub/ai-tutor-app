@@ -84,7 +84,7 @@ class _AdminLiveClassesScreenState extends State<AdminLiveClassesScreen> {
                           children: [
                             Text(c.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                             Text('${c.teacherName} \u2022 ${c.subjectName} \u2022 ${c.status}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                            Text('${c.classDate} \u2022 ${c.startTime.substring(0, 5)}-${c.endTime.substring(0, 5)}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                            Text('${c.classDate} \u2022 ${c.shortStartTime}-${c.shortEndTime}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                             if (c.status == 'scheduled') ...[
                               const SizedBox(height: 8),
                               OutlinedButton(

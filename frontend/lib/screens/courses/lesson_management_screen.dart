@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -103,7 +103,7 @@ class _LessonManagementScreenState extends State<LessonManagementScreen> {
     if (result == null || result.files.single.path == null) return;
 
     final file = File(result.files.single.path!);
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploading ${kind}...'), duration: const Duration(seconds: 30)));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploading $kind...'), duration: const Duration(seconds: 30)));
 
     try {
       if (kind == 'video') {
@@ -362,6 +362,7 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
     }
     final ok = await _saveBasicFields();
     if (!ok || _lessonId == null) return;
+    if (!mounted) return;
     setState(() => _publishing = true);
     try {
       await widget.service.publishLesson(_lessonId!);
@@ -378,6 +379,7 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
     if (_lessonId == null) return;
     final ok = await _saveBasicFields();
     if (!ok) return;
+    if (!mounted) return;
     setState(() => _publishing = true);
     try {
       await widget.service.unpublishLesson(_lessonId!);
@@ -395,8 +397,10 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
       final ok = await _saveBasicFields();
       if (!ok) return;
     }
+    if (!mounted) return;
     final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['mp4', 'mov']);
     if (result == null || result.files.single.path == null) return;
+    if (!mounted) return;
     final file = File(result.files.single.path!);
     setState(() => _uploadingVideo = true);
     try {
@@ -427,6 +431,7 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
       final ok = await _saveBasicFields();
       if (!ok) return;
     }
+    if (!mounted) return;
     setState(() => _uploadingVideo = true);
     try {
       await widget.service.updateLesson(_lessonId!, videoUrl: url, videoSource: 'youtube');
@@ -487,8 +492,10 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
       final ok = await _saveBasicFields();
       if (!ok) return;
     }
+    if (!mounted) return;
     final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
     if (result == null || result.files.single.path == null) return;
+    if (!mounted) return;
     final file = File(result.files.single.path!);
     setState(() => _uploadingPdf = true);
     try {
@@ -552,6 +559,14 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
     try {
       final controller = VideoPlayerController.networkUrl(Uri.parse(ApiConstants.resolveMediaUrl(_videoUrl)));
       await controller.initialize();
+      if (!mounted) {
+        // BUG FIX (controller leak): dispose() has already run and won't
+        // run again - if we stored this controller in the fields now, it
+        // would never be released. Dispose it directly instead of
+        // leaking it.
+        await controller.dispose();
+        return;
+      }
       _chewieController = ChewieController(
         videoPlayerController: controller,
         autoPlay: false,
@@ -559,7 +574,7 @@ class _LessonEditorDialogState extends State<_LessonEditorDialog> {
         aspectRatio: controller.value.aspectRatio == 0 ? 16 / 9 : controller.value.aspectRatio,
       );
       _videoController = controller;
-      if (mounted) setState(() {});
+      setState(() {});
     } catch (e) {
       _toast('Could not preview this video.');
       if (mounted) setState(() => _showVideoPreview = false);

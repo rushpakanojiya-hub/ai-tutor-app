@@ -15,12 +15,24 @@ import '../../services/quiz_service.dart';
 ///   stored answer key. Unchanged from before.
 /// - Freeform mode ([freeformQuestions] set, from the AI Quiz Generator):
 ///   mixes question types (single/multiple MCQ, true/false, fill-blank,
-///   short answer) and is graded per-type, both locally (for instant
-///   feedback) and server-side (for persistence/history).
+///   short answer) and is graded server-side, keyed by [quizSessionId].
+///
+/// SECURITY FIX: freeform questions used to arrive from /generate WITH
+/// their answer key (correct_option/correct_options/correct_text/
+/// explanation) attached, so this screen could grade and show correct/
+/// incorrect instantly, client-side, before ever talking to the server.
+/// The backend no longer sends that key up front (see quiz_service.dart/
+/// quiz_attempt_model.dart) - it's stored server-side against
+/// [quizSessionId] and only revealed, per-question, in the grading
+/// response after submission. So for freeform mode, every "was this
+/// right" / "what was correct" / "explanation" display below now reads
+/// from the server's graded answers (_gradedAnswers), never from the
+/// pre-submission question list.
 class QuizScreen extends StatefulWidget {
   final int? lessonId;
   final int? subjectId;
   final String? topic;
+  final String? quizSessionId;
   final List<QuizQuestionModel> questions;
   final List<QuizAttemptQuestion>? freeformQuestions;
 
@@ -29,6 +41,7 @@ class QuizScreen extends StatefulWidget {
     this.lessonId,
     this.subjectId,
     this.topic,
+    this.quizSessionId,
     this.questions = const [],
     this.freeformQuestions,
   });
@@ -46,14 +59,22 @@ class _QuizScreenState extends State<QuizScreen> {
   // Lesson-mode state (single_mcq only).
   late List<int?> _selected;
 
-  // Freeform-mode state (per question type).
+  // Freeform-mode state (per question type) - the student's own input only.
   late List<int?> _ffSelectedOption;
   late List<Set<int>> _ffSelectedOptions;
   late List<TextEditingController> _ffTextControllers;
 
   bool _submitted = false;
   bool _saving = false;
+  bool _submitFailed = false;
   String? _saveError;
+
+  /// The server's graded per-question results for freeform mode -
+  /// null until the submit response arrives. This (not _ffQuestions) is
+  /// the only place correct answers/explanations come from after
+  /// submission, since the client never has the answer key beforehand.
+  List<QuizAttemptQuestion>? _gradedAnswers;
+  int? _gradedCorrectCount;
 
   List<QuizAttemptQuestion> get _ffQuestions => widget.freeformQuestions ?? [];
 
@@ -97,11 +118,8 @@ class _QuizScreenState extends State<QuizScreen> {
 
   int get _correctCount {
     if (widget.isFreeform) {
-      int count = 0;
-      for (var i = 0; i < _ffQuestions.length; i++) {
-        if (_isFreeformCorrect(i)) count++;
-      }
-      return count;
+      // Not known until the server grades it - see _gradedAnswers.
+      return _gradedCorrectCount ?? 0;
     }
     int count = 0;
     for (var i = 0; i < widget.questions.length; i++) {
@@ -110,21 +128,19 @@ class _QuizScreenState extends State<QuizScreen> {
     return count;
   }
 
-  bool _isFreeformCorrect(int i) {
-    final q = _ffQuestions[i];
-    switch (q.questionType) {
-      case QuestionTypes.multipleMcq:
-        final selected = _ffSelectedOptions[i].toList()..sort();
-        final correct = (q.correctOptions ?? [])..sort();
-        return selected.length == correct.length && selected.toString() == correct.toString();
-      case QuestionTypes.fillBlank:
-      case QuestionTypes.shortAnswer:
-        final submitted = _ffTextControllers[i].text.trim().toLowerCase();
-        final correct = (q.correctText ?? '').trim().toLowerCase();
-        return submitted.isNotEmpty && submitted == correct;
-      default:
-        return _ffSelectedOption[i] != null && _ffSelectedOption[i] == q.correctOption;
+  /// The question data to use for displaying correctness/explanation for
+  /// freeform question [i]: the server's graded answer once available,
+  /// otherwise the original (answer-key-free) question.
+  QuizAttemptQuestion _displayQuestion(int i) {
+    if (_gradedAnswers != null && i < _gradedAnswers!.length) {
+      return _gradedAnswers![i];
     }
+    return _ffQuestions[i];
+  }
+
+  bool? _isFreeformCorrect(int i) {
+    if (_gradedAnswers == null || i >= _gradedAnswers!.length) return null;
+    return _gradedAnswers![i].isCorrect;
   }
 
   int get _totalQuestions => widget.isFreeform ? _ffQuestions.length : widget.questions.length;
@@ -135,6 +151,7 @@ class _QuizScreenState extends State<QuizScreen> {
       _submitted = true;
       _saving = true;
       _saveError = null;
+      _submitFailed = false;
     });
 
     if (!widget.isFreeform && widget.lessonId != null) {
@@ -144,6 +161,12 @@ class _QuizScreenState extends State<QuizScreen> {
 
     try {
       if (widget.isFreeform) {
+        if (widget.quizSessionId == null || widget.quizSessionId!.isEmpty) {
+          // Shouldn't happen from the normal generator flow, but fail
+          // loudly rather than submitting something the server will
+          // just reject anyway.
+          throw StateError('Missing quiz session - please generate a new quiz.');
+        }
         final answered = List.generate(_ffQuestions.length, (i) {
           final q = _ffQuestions[i];
           return q.answeredWith(
@@ -154,12 +177,15 @@ class _QuizScreenState extends State<QuizScreen> {
                 : null,
           );
         });
-        await _quizService.submitFreeformAttempt(
+        final result = await _quizService.submitFreeformAttempt(
+          quizSessionId: widget.quizSessionId!,
           subjectId: widget.subjectId,
           topic: widget.topic ?? 'General',
           timeTakenSeconds: _elapsedSeconds,
           questions: answered,
         );
+        _gradedAnswers = result.answers;
+        _gradedCorrectCount = result.correctCount;
       } else if (widget.lessonId != null) {
         await _quizService.submitLessonAttempt(
           lessonId: widget.lessonId!,
@@ -168,7 +194,10 @@ class _QuizScreenState extends State<QuizScreen> {
         );
       }
     } catch (e) {
-      _saveError = 'Your score is shown below, but saving to history failed. Check your connection.';
+      _saveError = widget.isFreeform
+          ? 'Could not grade your quiz - the session may have expired. Please generate a new quiz and try again.'
+          : 'Your score is shown below, but saving to history failed. Check your connection.';
+      _submitFailed = widget.isFreeform; // freeform has no local score to fall back on
     }
 
     if (mounted) setState(() => _saving = false);
@@ -176,6 +205,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final showScore = !widget.isFreeform || (!_saving && !_submitFailed);
     return Scaffold(
       appBar: AppBar(title: const Text('Quiz')),
       body: ListView(
@@ -184,19 +214,25 @@ class _QuizScreenState extends State<QuizScreen> {
           if (_submitted) ...[
             Container(
               padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(color: AppColors.greenLight, borderRadius: BorderRadius.circular(18)),
+              decoration: BoxDecoration(
+                color: _submitFailed ? const Color(0xFFFFE5E5) : AppColors.greenLight,
+                borderRadius: BorderRadius.circular(18),
+              ),
               child: Column(
                 children: [
-                  const Icon(Icons.emoji_events_rounded, color: AppColors.green, size: 36),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You scored $_correctCount / $_totalQuestions',
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.green),
+                  Icon(
+                    _submitFailed ? Icons.error_outline_rounded : Icons.emoji_events_rounded,
+                    color: _submitFailed ? AppColors.error : AppColors.green,
+                    size: 36,
                   ),
-                  if (_saving) ...[
-                    const SizedBox(height: 8),
-                    const Text('Saving...', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                  ],
+                  const SizedBox(height: 8),
+                  if (_saving)
+                    const Text('Grading your quiz...', style: TextStyle(color: AppColors.textSecondary, fontSize: 13))
+                  else if (showScore)
+                    Text(
+                      'You scored $_correctCount / $_totalQuestions',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.green),
+                    ),
                 ],
               ),
             ),
@@ -219,6 +255,11 @@ class _QuizScreenState extends State<QuizScreen> {
                 child: const Text('Submit Quiz'),
               ),
             )
+          else if (_submitFailed)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(onPressed: () => context.pop(), child: const Text('Back')),
+            )
           else
             SizedBox(
               width: double.infinity,
@@ -229,7 +270,8 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  // --- Lesson mode (single_mcq only, unchanged) ---
+  // --- Lesson mode (single_mcq only, unchanged - server-graded via the
+  // lesson's own stored answer key, never sent to the client) ---
 
   Widget _buildLessonQuestion(int index) {
     final q = widget.questions[index];
@@ -267,41 +309,47 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  // --- Freeform mode (multi-type) ---
+  // --- Freeform mode (multi-type, server-graded) ---
 
   Widget _buildFreeformQuestion(int index) {
-    final q = _ffQuestions[index];
+    final displayQ = _submitted ? _displayQuestion(index) : _ffQuestions[index];
+    final original = _ffQuestions[index];
     Widget answerWidget;
-    switch (q.questionType) {
+    switch (original.questionType) {
       case QuestionTypes.multipleMcq:
-        answerWidget = Column(children: [for (var j = 0; j < q.options.length; j++) _buildMultiOption(index, j, q)]);
+        answerWidget = Column(children: [for (var j = 0; j < original.options.length; j++) _buildMultiOption(index, j, displayQ)]);
         break;
       case QuestionTypes.fillBlank:
       case QuestionTypes.shortAnswer:
-        answerWidget = _buildTextAnswer(index, q);
+        answerWidget = _buildTextAnswer(index, displayQ);
         break;
       default:
-        answerWidget = Column(children: [for (var j = 0; j < q.options.length; j++) _buildSingleOption(index, j, q)]);
+        answerWidget = Column(children: [for (var j = 0; j < original.options.length; j++) _buildSingleOption(index, j, displayQ)]);
     }
+
+    // Grading (correctOption/explanation) only exists on displayQ once
+    // the server has responded - before/without that, show neither.
+    final graded = _submitted && _gradedAnswers != null;
 
     return _questionCard(
       index: index,
-      questionText: q.question,
-      typeLabel: QuestionTypes.label(q.questionType),
-      difficultyScore: q.difficultyScore,
-      hint: q.hint,
-      explanation: _submitted ? q.explanation : null,
+      questionText: original.question,
+      typeLabel: QuestionTypes.label(original.questionType),
+      difficultyScore: original.difficultyScore,
+      hint: original.hint,
+      explanation: graded ? displayQ.explanation : null,
       child: answerWidget,
     );
   }
 
-  Widget _buildSingleOption(int qIndex, int optionIndex, QuizAttemptQuestion q) {
+  Widget _buildSingleOption(int qIndex, int optionIndex, QuizAttemptQuestion gradedOrOriginal) {
     final selected = _ffSelectedOption[qIndex] == optionIndex;
+    final graded = _submitted && _gradedAnswers != null;
     var bg = AppColors.pageBackground;
     var fg = AppColors.textPrimary;
 
-    if (_submitted) {
-      if (optionIndex == q.correctOption) {
+    if (graded) {
+      if (optionIndex == gradedOrOriginal.correctOption) {
         bg = AppColors.greenLight;
         fg = AppColors.green;
       } else if (selected) {
@@ -314,7 +362,7 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     return _optionTile(
-      label: q.options[optionIndex],
+      label: gradedOrOriginal.options.isNotEmpty ? gradedOrOriginal.options[optionIndex] : _ffQuestions[qIndex].options[optionIndex],
       bg: bg,
       fg: fg,
       selected: selected,
@@ -322,13 +370,14 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Widget _buildMultiOption(int qIndex, int optionIndex, QuizAttemptQuestion q) {
+  Widget _buildMultiOption(int qIndex, int optionIndex, QuizAttemptQuestion gradedOrOriginal) {
     final selected = _ffSelectedOptions[qIndex].contains(optionIndex);
-    final isCorrectOption = (q.correctOptions ?? []).contains(optionIndex);
+    final graded = _submitted && _gradedAnswers != null;
+    final isCorrectOption = (gradedOrOriginal.correctOptions ?? []).contains(optionIndex);
     var bg = AppColors.pageBackground;
     var fg = AppColors.textPrimary;
 
-    if (_submitted) {
+    if (graded) {
       if (isCorrectOption) {
         bg = AppColors.greenLight;
         fg = AppColors.green;
@@ -342,7 +391,7 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     return _optionTile(
-      label: q.options[optionIndex],
+      label: _ffQuestions[qIndex].options[optionIndex],
       bg: bg,
       fg: fg,
       selected: selected,
@@ -363,8 +412,9 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Widget _buildTextAnswer(int qIndex, QuizAttemptQuestion q) {
-    final isCorrect = _submitted ? _isFreeformCorrect(qIndex) : null;
+  Widget _buildTextAnswer(int qIndex, QuizAttemptQuestion gradedOrOriginal) {
+    final graded = _submitted && _gradedAnswers != null;
+    final isCorrect = graded ? _isFreeformCorrect(qIndex) : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -372,28 +422,31 @@ class _QuizScreenState extends State<QuizScreen> {
           controller: _ffTextControllers[qIndex],
           enabled: !_submitted,
           decoration: InputDecoration(
-            hintText: q.questionType == QuestionTypes.fillBlank ? 'Fill in the blank...' : 'Type your answer...',
+            hintText: gradedOrOriginal.questionType == QuestionTypes.fillBlank ? 'Fill in the blank...' : 'Type your answer...',
             filled: true,
             fillColor: AppColors.pageBackground,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
           ),
           onChanged: (_) => setState(() {}),
         ),
-        if (_submitted) ...[
+        if (graded && isCorrect != null) ...[
           const SizedBox(height: 8),
           Row(
             children: [
-              Icon(isCorrect! ? Icons.check_circle_rounded : Icons.cancel_rounded,
+              Icon(isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
                   size: 16, color: isCorrect ? AppColors.green : AppColors.error),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Correct answer: ${q.correctText ?? ''}',
+                  'Correct answer: ${gradedOrOriginal.correctText ?? ''}',
                   style: TextStyle(fontSize: 12, color: isCorrect ? AppColors.green : AppColors.error),
                 ),
               ),
             ],
           ),
+        ] else if (_submitted && !_saving) ...[
+          const SizedBox(height: 8),
+          const Text('Grading...', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
         ],
       ],
     );

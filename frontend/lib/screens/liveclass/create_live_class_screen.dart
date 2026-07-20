@@ -133,7 +133,7 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
                 TextButton(
                   onPressed: () async {
                     final picked = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
-                    if (picked != null) setState(() => _date = picked);
+                    if (picked != null && mounted) setState(() => _date = picked);
                   },
                   child: const Text('Pick date'),
                 ),
@@ -152,7 +152,7 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
                       TextButton(
                         onPressed: () async {
                           final picked = await showTimePicker(context: context, initialTime: _startTime);
-                          if (picked != null) setState(() => _startTime = picked);
+                          if (picked != null && mounted) setState(() => _startTime = picked);
                         },
                         child: const Text('Pick'),
                       ),
@@ -170,7 +170,7 @@ class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
                       TextButton(
                         onPressed: () async {
                           final picked = await showTimePicker(context: context, initialTime: _endTime);
-                          if (picked != null) setState(() => _endTime = picked);
+                          if (picked != null && mounted) setState(() => _endTime = picked);
                         },
                         child: const Text('Pick'),
                       ),

@@ -29,6 +29,13 @@ class _ResourceVideoViewerScreenState extends State<ResourceVideoViewerScreen> {
     try {
       final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
       await controller.initialize();
+      if (!mounted) {
+        // BUG FIX (controller leak): dispose() already ran if we're
+        // here unmounted, and won't run again - dispose this orphaned
+        // controller directly instead of leaking it.
+        await controller.dispose();
+        return;
+      }
       _chewieController = ChewieController(
         videoPlayerController: controller,
         autoPlay: true,
@@ -39,7 +46,7 @@ class _ResourceVideoViewerScreenState extends State<ResourceVideoViewerScreen> {
         ),
       );
       _videoController = controller;
-      if (mounted) setState(() {});
+      setState(() {});
     } catch (e) {
       if (mounted) setState(() => _hasError = true);
     }

@@ -63,6 +63,15 @@ class LiveClassModel {
     }
   }
 
+  // BUG FIX: several screens did `startTime.substring(0, 5)` /
+  // `endTime.substring(0, 5)` directly to show "HH:MM" - startTime/
+  // endTime default to '' when the backend omits the field (see
+  // fromJson below), and '' (or anything shorter than 5 chars) throws
+  // a RangeError. These shared getters fall back to the raw string
+  // instead of crashing; use them instead of substring(0, 5) directly.
+  String get shortStartTime => startTime.length >= 5 ? startTime.substring(0, 5) : startTime;
+  String get shortEndTime => endTime.length >= 5 ? endTime.substring(0, 5) : endTime;
+
   factory LiveClassModel.fromJson(Map<String, dynamic> json) {
     return LiveClassModel(
       id: json['id'] as int? ?? 0,

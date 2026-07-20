@@ -92,6 +92,14 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
     try {
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await controller.initialize();
+      if (!mounted) {
+        // BUG FIX (controller leak): dispose() has already run (and
+        // won't run again) if we got here after the widget was
+        // disposed - storing this controller in the fields now would
+        // leak it forever. Dispose it directly instead.
+        await controller.dispose();
+        return;
+      }
       _chewieController = ChewieController(
         videoPlayerController: controller,
         autoPlay: false,
@@ -102,7 +110,7 @@ class _LessonPlayerScreenState extends State<LessonPlayerScreen> {
         ),
       );
       _videoController = controller;
-      if (mounted) setState(() {});
+      setState(() {});
     } catch (e) {
       _videoController = null;
       _chewieController = null;

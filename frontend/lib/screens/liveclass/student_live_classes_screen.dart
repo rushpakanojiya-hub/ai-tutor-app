@@ -83,14 +83,28 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
     return '${s}s';
   }
 
+  /// BUG FIX: was doing its own unguarded
+  /// `c.endTime.split(':').map(int.parse)` - if endTime is empty (the
+  /// model defaults it to '' when the backend omits the field) or
+  /// malformed, split(':') returns [''] and int.parse('') throws a
+  /// FormatException, crashing this screen. LiveClassModel.dateTime/
+  /// endDateTime already do this exact parsing safely (wrapped in
+  /// try/catch, returning null on failure) - reuse those instead of
+  /// re-implementing the unsafe version here.
   bool _isWithinWindow(LiveClassModel c) {
-    final dt = c.dateTime;
-    if (dt == null) return false;
-    final endParts = c.endTime.split(':').map(int.parse).toList();
-    final end = DateTime(dt.year, dt.month, dt.day, endParts[0], endParts[1]);
+    final start = c.dateTime;
+    final end = c.endDateTime;
+    if (start == null || end == null) return false;
     final now = DateTime.now();
-    return now.isAfter(dt) && now.isBefore(end);
+    return now.isAfter(start) && now.isBefore(end);
   }
+
+  /// BUG FIX: HH:MM:SS time strings from the backend can be empty ('')
+  /// when a field is missing - the previous direct `.substring(0, 5)`
+  /// calls would throw a RangeError on anything shorter than 5
+  /// characters. Falls back to the raw (possibly empty) string instead
+  /// of crashing.
+  String _shortTime(String time) => time.length >= 5 ? time.substring(0, 5) : time;
 
   Future<void> _join(LiveClassModel c) async {
     if (c.meetingStatus != 'live') {
@@ -217,7 +231,7 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
           Text(c.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
           const SizedBox(height: 4),
           Text('${c.subjectName} \u2022 ${c.teacherName}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-          Text('${c.classDate} \u2022 ${c.startTime.substring(0, 5)}-${c.endTime.substring(0, 5)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          Text('${c.classDate} \u2022 ${_shortTime(c.startTime)}-${_shortTime(c.endTime)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
           if (dt != null) ...[
             const SizedBox(height: 8),
             Container(
@@ -278,7 +292,7 @@ class _StudentLiveClassesScreenState extends State<StudentLiveClassesScreen> {
           ),
           const SizedBox(height: 4),
           Text('${c.subjectName} \u2022 ${c.teacherName}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-          Text('${c.classDate} \u2022 ${c.startTime.substring(0, 5)}-${c.endTime.substring(0, 5)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          Text('${c.classDate} \u2022 ${_shortTime(c.startTime)}-${_shortTime(c.endTime)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ],
       ),
     );

@@ -1,3 +1,22 @@
+/// Response of POST /api/quiz/generate: the questions (answer-key
+/// stripped by the backend - see quiz_service.dart) plus a session id
+/// that must be sent back unchanged when submitting, so the server can
+/// grade against the real answer key it stored at generation time.
+class GeneratedQuiz {
+  final String quizSessionId;
+  final List<QuizAttemptQuestion> questions;
+
+  GeneratedQuiz({required this.quizSessionId, required this.questions});
+
+  factory GeneratedQuiz.fromJson(Map<String, dynamic> json) {
+    final questionsJson = json['questions'] as List<dynamic>? ?? [];
+    return GeneratedQuiz(
+      quizSessionId: json['quiz_session_id'] as String? ?? '',
+      questions: questionsJson.map((e) => QuizAttemptQuestion.fromJson(e as Map<String, dynamic>)).toList(),
+    );
+  }
+}
+
 /// Question type constants for the AI Quiz Generator (freeform quizzes).
 /// Lesson-based quizzes are always singleMcq.
 class QuestionTypes {
@@ -101,39 +120,17 @@ class QuizAttemptQuestion {
     );
   }
 
-  // TODO(SECURITY - do not remove without a backend fix first):
-  // This sends the question's own answer key (correct_option/
-  // correct_options/correct_text) back to the server as part of the
-  // submission payload. Confirmed against backend/internal/quiz/service.go
-  // (~line 139): the scoring logic there does
-  //   answer.IsCorrect = *q.SelectedOption == *q.CorrectOption
-  // i.e. it trusts whatever "correct answer" the CLIENT reports, rather
-  // than checking against a value the server itself stored. A modified
-  // client (or a tampered request) can set correct_option = selected_option
-  // for every question and be guaranteed a 100% score.
-  //
-  // This can't be fixed by simply deleting these fields from the request:
-  // GenerateQuiz() (backend/internal/quiz/service.go) never persists the
-  // AI-generated question set server-side, so right now the client is the
-  // ONLY place the correct answers exist after generation - removing them
-  // here would make every freeform-quiz submission score 0%.
-  //
-  // Proper fix (backend change required, out of scope for this frontend
-  // pass): have GenerateQuiz() store the generated questions + answer key
-  // server-side keyed by a generation/session id, return only that id (and
-  // the question text/options, never the answer key) to the client, and
-  // have the submit endpoint look up the correct answers by that id
-  // instead of accepting them from the request body.
+  // SECURITY FIX: this used to send the question's own answer key
+  // (correct_option/correct_options/correct_text) back to the server as
+  // part of the submission payload, alongside a comment claiming an HMAC
+  // signature made this safe - no such signature was ever sent or
+  // checked. The backend now stores the real answer key server-side at
+  // /generate time (quiz_session_id) and grades every submission against
+  // that, never against anything the client reports. This payload is
+  // now just the student's own answer - the server doesn't need (and
+  // must not trust) anything else here.
   Map<String, dynamic> toAnsweredJson() => {
         'question_type': questionType,
-        'question': question,
-        'options': options,
-        if (correctOption != null) 'correct_option': correctOption,
-        if (correctOptions != null) 'correct_options': correctOptions,
-        if (correctText != null) 'correct_text': correctText,
-        if (hint != null) 'hint': hint,
-        if (explanation != null) 'explanation': explanation,
-        'difficulty_score': difficultyScore,
         if (selectedOption != null) 'selected_option': selectedOption,
         if (selectedOptions != null) 'selected_options': selectedOptions,
         if (submittedText != null) 'submitted_text': submittedText,

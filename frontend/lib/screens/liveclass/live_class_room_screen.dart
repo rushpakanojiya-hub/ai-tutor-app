@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -984,7 +984,15 @@ class _LiveClassRoomScreenState extends State<LiveClassRoomScreen> {
     if (widget.isTeacher && widget.onEndClass != null) {
       await widget.onEndClass!();
     }
-    if (mounted) Navigator.of(context).pop();
+    // BUG FIX (critical): do NOT pop here. _room.disconnect() above
+    // already fires RoomDisconnectedEvent, whose listener (see
+    // ..on<lk.RoomDisconnectedEvent> in initState) does
+    // popUntil((route) => route.isFirst) - that's what correctly
+    // returns the student/teacher to the Live Classes list for every
+    // disconnect reason (manual leave, teacher ending the class, or the
+    // connection simply dropping). Calling Navigator.pop() again here
+    // tore an extra route off the stack on top of that popUntil,
+    // landing the user on a blank/root screen instead.
   }
 
   @override

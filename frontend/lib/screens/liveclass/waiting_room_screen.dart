@@ -113,7 +113,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                     _infoRow(Icons.person_outline, c.teacherName),
                     _infoRow(Icons.menu_book_outlined, c.subjectName),
                     if (c.lessonTitle.isNotEmpty) _infoRow(Icons.play_lesson_outlined, c.lessonTitle),
-                    _infoRow(Icons.event_outlined, '${c.classDate} \u2022 ${c.startTime.substring(0, 5)}-${c.endTime.substring(0, 5)}'),
+                    _infoRow(Icons.event_outlined, '${c.classDate} \u2022 ${c.shortStartTime}-${c.shortEndTime}'),
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

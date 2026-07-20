@@ -163,6 +163,7 @@ class _LessonFormDialogState extends State<LessonFormDialog> {
   Future<void> _publish() async {
     final ok = await _ensureSaved();
     if (!ok) return;
+    if (!mounted) return;
     setState(() => _saving = true);
     try {
       await _service.publishLesson(_lesson!.id);
@@ -192,8 +193,10 @@ class _LessonFormDialogState extends State<LessonFormDialog> {
   Future<void> _pickAndUploadVideo() async {
     final saved = await _ensureSaved();
     if (!saved) return;
+    if (!mounted) return;
     final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['mp4', 'mov']);
     if (result == null || result.files.single.path == null) return;
+    if (!mounted) return;
     final file = File(result.files.single.path!);
     setState(() => _uploadingVideo = true);
     try {
@@ -215,6 +218,7 @@ class _LessonFormDialogState extends State<LessonFormDialog> {
     }
     final saved = await _ensureSaved();
     if (!saved) return;
+    if (!mounted) return;
     setState(() => _uploadingVideo = true);
     try {
       await _service.setLessonYoutubeVideo(_lesson!.id, url);
@@ -231,6 +235,7 @@ class _LessonFormDialogState extends State<LessonFormDialog> {
     if (_lesson == null) return;
     final confirmed = await _confirm('Remove video?', 'This removes the video from the lesson.');
     if (!confirmed) return;
+    if (!mounted) return;
     setState(() => _uploadingVideo = true);
     try {
       await _service.removeLessonVideo(_lesson!.id);
@@ -247,8 +252,10 @@ class _LessonFormDialogState extends State<LessonFormDialog> {
   Future<void> _pickAndUploadPdf() async {
     final saved = await _ensureSaved();
     if (!saved) return;
+    if (!mounted) return;
     final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
     if (result == null || result.files.single.path == null) return;
+    if (!mounted) return;
     final file = File(result.files.single.path!);
     setState(() => _uploadingPdf = true);
     try {
@@ -266,6 +273,7 @@ class _LessonFormDialogState extends State<LessonFormDialog> {
     if (_lesson == null) return;
     final confirmed = await _confirm('Remove PDF?', 'This removes the PDF notes from the lesson.');
     if (!confirmed) return;
+    if (!mounted) return;
     setState(() => _uploadingPdf = true);
     try {
       await _service.removeLessonPdf(_lesson!.id);

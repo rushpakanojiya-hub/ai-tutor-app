@@ -65,7 +65,7 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
     });
 
     try {
-      final questions = await _quizService.generateQuiz(
+      final generated = await _quizService.generateQuiz(
         subjectId: _selectedSubjectId,
         topic: topic,
         numQuestions: _numQuestions,
@@ -73,7 +73,7 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
         questionTypes: _selectedTypes.toList(),
       );
 
-      if (questions.isEmpty) {
+      if (generated.questions.isEmpty) {
         if (mounted) {
           setState(() {
             _generating = false;
@@ -89,7 +89,8 @@ class _AiQuizGeneratorScreenState extends State<AiQuizGeneratorScreen> {
           extra: {
             'subjectId': _selectedSubjectId,
             'topic': topic,
-            'freeformQuestions': questions,
+            'quizSessionId': generated.quizSessionId,
+            'freeformQuestions': generated.questions,
           },
         );
       }

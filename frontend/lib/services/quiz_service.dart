@@ -1,4 +1,4 @@
-﻿import '../core/constants/api_constants.dart';
+import '../core/constants/api_constants.dart';
 import '../models/quiz_attempt_model.dart';
 import 'api_service.dart';
 
@@ -24,25 +24,25 @@ class QuizService {
 
   /// Submits an AI-generated freeform quiz (not tied to a lesson), mixing
   /// whichever question types were used.
+  ///
+  /// [quizSessionId] MUST be the one returned by [generateQuiz] for this
+  /// exact quiz - the backend uses it to look up the real answer key it
+  /// stored server-side at generation time and grades against that,
+  /// never against anything this client sends. See
+  /// QuizAttemptQuestion.toAnsweredJson for why the request no longer
+  /// includes an answer key at all.
   Future<QuizAttemptResult> submitFreeformAttempt({
+    required String quizSessionId,
     int? subjectId,
     required String topic,
     required List<QuizAttemptQuestion> questions,
     required int timeTakenSeconds,
   }) async {
     final response = await _api.post(ApiConstants.submitFreeformQuizAttempt, {
+      'quiz_session_id': quizSessionId,
       if (subjectId != null) 'subject_id': subjectId,
       'topic': topic,
       'time_taken_seconds': timeTakenSeconds,
-      // Each question carries its own signature (an HMAC the backend
-      // computed over its real answer key at /generate time) alongside
-      // correct_option/correct_options/correct_text. The backend
-      // re-verifies that signature on submit (verifyAnswerKey in
-      // quiz/service.go) - if a client edits the answer key before
-      // submitting, the signature no longer matches and the whole
-      // submission is rejected rather than graded, so echoing this data
-      // back is safe even though there's no server-stored quiz bank for
-      // freeform quizzes to look it up from instead.
       'questions': questions.map((q) => q.toAnsweredJson()).toList(),
     });
     return QuizAttemptResult.fromJson(response['data'] as Map<String, dynamic>);
@@ -72,8 +72,11 @@ class QuizService {
 
   /// AI Quiz Generator: asks the backend (Groq) for a fresh quiz on any
   /// topic, mixing the requested question types (defaults to Single
-  /// Correct MCQ only if none are given).
-  Future<List<QuizAttemptQuestion>> generateQuiz({
+  /// Correct MCQ only if none are given). Returns the quiz_session_id
+  /// (required by [submitFreeformAttempt]) alongside the questions - the
+  /// questions returned here never include the answer key, only the
+  /// student-facing fields (question/options/hint).
+  Future<GeneratedQuiz> generateQuiz({
     int? subjectId,
     required String topic,
     int numQuestions = 5,
@@ -87,7 +90,6 @@ class QuizService {
       'difficulty': difficulty,
       if (questionTypes != null && questionTypes.isNotEmpty) 'question_types': questionTypes,
     });
-    final data = response['data'] as List<dynamic>? ?? [];
-    return data.map((json) => QuizAttemptQuestion.fromJson(json as Map<String, dynamic>)).toList();
+    return GeneratedQuiz.fromJson(response['data'] as Map<String, dynamic>);
   }
 }

@@ -111,6 +111,7 @@ class AppRouter {
             lessonId: extra['lessonId'] as int?,
             subjectId: extra['subjectId'] as int?,
             topic: extra['topic'] as String?,
+            quizSessionId: extra['quizSessionId'] as String?,
             questions: (extra['questions'] as List<dynamic>? ?? []).cast<QuizQuestionModel>(),
             freeformQuestions: (extra['freeformQuestions'] as List<dynamic>?)?.cast<QuizAttemptQuestion>(),
           );

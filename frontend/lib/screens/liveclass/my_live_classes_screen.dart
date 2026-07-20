@@ -246,7 +246,7 @@ class _MyLiveClassesScreenState extends State<MyLiveClassesScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 4),
-                                  Text('${c.subjectName} \u2022 ${c.classDate} \u2022 ${c.startTime.substring(0, 5)}-${c.endTime.substring(0, 5)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                  Text('${c.subjectName} \u2022 ${c.classDate} \u2022 ${c.shortStartTime}-${c.shortEndTime}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                                   const SizedBox(height: 12),
                                   Wrap(
                                     spacing: 8,
