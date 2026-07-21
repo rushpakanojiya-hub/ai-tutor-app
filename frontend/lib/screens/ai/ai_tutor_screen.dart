@@ -36,6 +36,21 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
   bool _loadingSubjects = true;
   bool _extractingImage = false;
 
+  // BUG FIX ("Chat feels hung / doesn't scroll immediately"): the screen
+  // used to only call _scrollToBottom() once, after `await
+  // provider.sendMessage(value)` fully returned - and sendMessage()
+  // itself awaits the entire word-by-word typing-reveal animation before
+  // returning. So the student's own message (added to the list
+  // immediately by the provider) sat off-screen, unscrolled-to, for the
+  // ENTIRE round trip + typing animation - looking exactly like the chat
+  // had hung, even though it was working correctly underneath. Holding a
+  // reference to the provider lets this screen listen for every state
+  // change (message added, each word revealed, reply finished) and
+  // scroll to follow along live, instead of waiting for one big
+  // await to finish. Stored directly (not looked up via context in
+  // dispose(), which can be unsafe) so it can be safely removed.
+  AiProvider? _providerRef;
+
   static const _followUps = [
     'Explain in simple language',
     'Give examples',
@@ -64,6 +79,11 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
     setState(() => _loadingSubjects = false);
 
     final provider = context.read<AiProvider>();
+    _providerRef = provider;
+    // Scroll to follow every provider change (new message, each word of
+    // the typing-reveal animation, error state) - see the field comment
+    // above for why this replaces waiting on one big await.
+    provider.addListener(_scrollToBottom);
     provider.loadSessions();
     provider.loadRecommendations();
     if (provider.messages.isEmpty && provider.currentSessionId == null) {
@@ -485,6 +505,7 @@ class _AiTutorScreenState extends State<AiTutorScreen> {
 
   @override
   void dispose() {
+    _providerRef?.removeListener(_scrollToBottom);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();

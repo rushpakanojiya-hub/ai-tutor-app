@@ -12,7 +12,21 @@
          running.
 
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
-    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+    <!-- BUG FIX ("Black status/nav bar in system dark mode"): this file is
+         the theme Android uses when the DEVICE's system dark mode is on,
+         separate from values/styles.xml (used in light mode). It was
+         missing the exact same transparent-status-bar / white-nav-bar
+         overrides that values/styles.xml has, and inherited from
+         Theme.Black.NoTitleBar - so on any device with system dark mode
+         enabled, Android painted solid black status/navigation bars
+         behind the app regardless of what main.dart's SystemChrome calls
+         requested at runtime. The app always renders with AppTheme.lightTheme
+         (no dark theme of its own), so this native theme needs the same
+         light-safe bar colors as the day version, not a black one. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
     </style>
 </resources>

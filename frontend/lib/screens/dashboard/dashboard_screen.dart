@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -78,20 +78,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Scaffold(
         backgroundColor: AppColors.pageBackground,
         body: SafeArea(child: pages[_currentIndex]),
+        // BUG FIX ("Bottom nav labels cut off / too low"): this Container
+        // had a fixed height: 72 with no allowance for the bottom system
+        // gesture bar inset - unlike body above (wrapped in SafeArea),
+        // so on edge-to-edge devices the icon/label Row got pushed down
+        // into the system bar area and labels were clipped. Padding by
+        // MediaQuery's bottom inset (0 on devices with on-screen nav
+        // buttons instead of gesture nav, so this doesn't add unwanted
+        // space there) keeps content above it instead.
+        // BUG FIX ("Bottom nav labels cut off / too low"): previously
+        // reserved space for the bottom system inset with manual
+        // height + padding arithmetic (height: 72 + inset, padding:
+        // bottom: inset) - correct in theory, but hand-rolled inset math
+        // is easy to get subtly wrong across different devices/nav modes
+        // (3-button vs gesture nav) and had visibly failed on-device.
+        // SafeArea is Flutter's own purpose-built widget for exactly
+        // this: it reads the real system inset and reserves it reliably,
+        // regardless of device or navigation mode. `top: false` since
+        // this is a BOTTOM bar - it should only avoid the bottom inset,
+        // not add unwanted space at its own top edge.
         bottomNavigationBar: Container(
-          height: 72,
           decoration: BoxDecoration(
             color: AppColors.card,
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, -4))],
           ),
-          child: Row(
-            children: [
-              _navItem(0, Icons.home_outlined, Icons.home_rounded, 'Home'),
-              _navItem(1, Icons.menu_book_outlined, Icons.menu_book_rounded, 'Courses'),
-              if (isStudent) _navItem(2, Icons.assignment_outlined, Icons.assignment_rounded, 'Assignments'),
-              _navItem(isStudent ? 3 : 2, Icons.smart_toy_outlined, Icons.smart_toy_rounded, 'AI Tutor'),
-              _navItem(isStudent ? 4 : 3, Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
-            ],
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 64,
+              child: Row(
+                children: [
+                  _navItem(0, Icons.home_outlined, Icons.home_rounded, 'Home'),
+                  _navItem(1, Icons.menu_book_outlined, Icons.menu_book_rounded, 'Courses'),
+                  if (isStudent) _navItem(2, Icons.assignment_outlined, Icons.assignment_rounded, 'Assignments'),
+                  _navItem(isStudent ? 3 : 2, Icons.smart_toy_outlined, Icons.smart_toy_rounded, 'AI Tutor'),
+                  _navItem(isStudent ? 4 : 3, Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -406,8 +430,8 @@ class _DashboardHomeState extends State<_DashboardHome> {
   /// 2x2 grid (not a cramped 4-in-a-row) so titles/subtitles never overflow.
   Widget _buildQuickAccessGrid() {
     final cards = [
-      _QuickAccessData(Icons.menu_book_rounded, 'My Courses', 'Continue learning', const Color(0xFF6D5DF6), const Color(0xFF5B4CF0), () => context.push('/categories')),
-      _QuickAccessData(Icons.smart_toy_rounded, 'AI Tutor', 'Ask anything', const Color(0xFFFF7A18), const Color(0xFFFF5A3D), () => context.push('/ai-tutor')),
+      _QuickAccessData(Icons.video_camera_front_rounded, 'Live Class', 'Join a session', const Color(0xFF6D5DF6), const Color(0xFF5B4CF0), () => context.push('/student-live-classes')),
+      _QuickAccessData(Icons.workspace_premium_rounded, 'Certificate', 'View your certificates', const Color(0xFFFF7A18), const Color(0xFFFF5A3D), () => context.push('/certificates')),
       _QuickAccessData(Icons.help_outline_rounded, 'Quiz', 'Test your knowledge', const Color(0xFF3B82F6), const Color(0xFF2563EB), () => context.push('/ai-quiz-generator')),
       _QuickAccessData(Icons.trending_up_rounded, 'Progress', 'Track your growth', const Color(0xFF22C55E), const Color(0xFF16A34A), () => context.push('/quiz-analytics')),
     ];

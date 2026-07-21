@@ -26,6 +26,7 @@ import '../../screens/liveclass/create_live_class_screen.dart';
 import '../../screens/liveclass/my_live_classes_screen.dart';
 import '../../screens/liveclass/student_live_classes_screen.dart';
 import '../../screens/liveclass/admin_live_classes_screen.dart';
+import '../../screens/certificates/my_certificates_screen.dart';
 import '../../screens/notifications/notification_center_screen.dart';
 import '../../screens/search/search_screen.dart';
 import '../../screens/splash/splash_screen.dart';
@@ -194,6 +195,13 @@ class AppRouter {
       GoRoute(
         path: '/admin-live-classes',
         builder: (context, state) => const AdminLiveClassesScreen(),
+      ),
+      // BUG FIX: MyCertificatesScreen existed in the codebase (with its
+      // own working backend-backed logic) but had no route pointing to
+      // it anywhere - there was no way to actually reach it from the app.
+      GoRoute(
+        path: '/certificates',
+        builder: (context, state) => const MyCertificatesScreen(),
       ),
       GoRoute(
         path: '/notifications',
